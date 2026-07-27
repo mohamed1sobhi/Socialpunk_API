@@ -9,10 +9,6 @@ description: "Task list template for feature implementation"
 
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Governance**: Follow `.specify/memory/constitution.md` and
-[`engineering-guidelines.md`](../../engineering-guidelines.md). Reference applicable guideline
-sections when needed; do not restate their rules in this task list.
-
 **Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
@@ -34,7 +30,7 @@ sections when needed; do not restate their rules in this task list.
   ============================================================================
   IMPORTANT: The tasks below are SAMPLE TASKS for illustration purposes only.
 
-  The /speckit-tasks command MUST replace these with actual tasks based on:
+  The /speckit.tasks command MUST replace these with actual tasks based on:
   - User stories from spec.md (with their priorities P1, P2, P3...)
   - Feature requirements from plan.md
   - Entities from data-model.md

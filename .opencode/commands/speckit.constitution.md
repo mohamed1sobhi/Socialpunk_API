@@ -1,12 +1,10 @@
 ---
-name: "speckit-constitution"
-description: "Create or update the project constitution from interactive or provided principle inputs, ensuring all dependent templates stay in sync."
-compatibility: "Requires spec-kit project structure with .specify/ directory"
-metadata:
-  author: "github-spec-kit"
-  source: "templates/commands/constitution.md"
+description: Create or update the project constitution from interactive or provided principle inputs, ensuring all dependent templates stay in sync.
+handoffs:
+  - label: Build Specification
+    agent: speckit.specify
+    prompt: Implement the feature specification based on the updated constitution. I want to build...
 ---
-
 
 ## User Input
 
@@ -15,6 +13,25 @@ $ARGUMENTS
 ```
 
 You **MUST** consider the user input before proceeding (if not empty).
+
+## Scope Guard
+
+This command's own work is limited to updating the project constitution and propagating
+constitution-driven changes to the dependent artifacts identified in this command.
+
+- Classify every part of the user input as either constitution content or a separate,
+  non-governance intent.
+- If the input includes feature implementation, code generation, refactoring, building, or
+  deployment requests, you **MUST NOT** execute them. Extract them as deferred intents instead.
+- You **MUST NOT** create, modify, or delete application source files, feature routes,
+  components, tests, deployment files, or other artifacts unrelated to the constitution
+  workflow and its required propagation.
+- If it is unclear whether an instruction is constitution content, ask for clarification before
+  making changes.
+- After completing the constitution update, include a `Next Actions` section for each deferred
+  intent. List the original intent and suggest the appropriate follow-up Spec Kit command, such
+  as `/speckit.specify`, without invoking it.
+- If there are no non-governance intents, omit the `Next Actions` section.
 
 ## Pre-Execution Checks
 
@@ -26,7 +43,6 @@ You **MUST** consider the user input before proceeding (if not empty).
 - For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
   - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
   - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
-- When constructing slash commands from hook command names, replace dots (`.`) with hyphens (`-`). For example, `speckit.git.commit` → `/speckit-git-commit`.
 - For each executable hook, output the following based on its `optional` flag:
   - **Optional hook** (`optional: true`):
     ```
@@ -107,6 +123,7 @@ Follow this execution flow:
    - New version and bump rationale.
    - Any files flagged for manual follow-up.
    - Suggested commit message (e.g., `docs: amend constitution to vX.Y.Z (principle additions + governance update)`).
+   - A `Next Actions` section for any deferred non-governance intents.
 
 Formatting & Style Requirements:
 
@@ -131,7 +148,6 @@ Check if `.specify/extensions.yml` exists in the project root.
 - For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
   - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
   - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
-- When constructing slash commands from hook command names, replace dots (`.`) with hyphens (`-`). For example, `speckit.git.commit` → `/speckit-git-commit`.
 - For each executable hook, output the following based on its `optional` flag:
   - **Optional hook** (`optional: true`):
     ```

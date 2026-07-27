@@ -4,7 +4,7 @@
 
 **Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
 
-**Note**: This template is filled in by the `/speckit-plan` command; its definition describes the execution workflow.
+**Note**: This template is filled in by the `/speckit.plan` command; its definition describes the execution workflow.
 
 ## Summary
 
@@ -40,13 +40,7 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-Review `.specify/memory/constitution.md` and
-[`engineering-guidelines.md`](../../engineering-guidelines.md). Record applicable guideline
-sections by reference; do not reproduce their rules.
-
-**Applicable Guideline Sections**: [section references and why they apply]
-
-**Compliance Status**: [PASS, or each violation with justification and required resolution]
+[Gates determined based on constitution file]
 
 ## Project Structure
 
@@ -54,12 +48,12 @@ sections by reference; do not reproduce their rules.
 
 ```text
 specs/[###-feature]/
-├── plan.md              # This file (/speckit-plan command output)
-├── research.md          # Phase 0 output (/speckit-plan command)
-├── data-model.md        # Phase 1 output (/speckit-plan command)
-├── quickstart.md        # Phase 1 output (/speckit-plan command)
-├── contracts/           # Phase 1 output (/speckit-plan command)
-└── tasks.md             # Phase 2 output (/speckit-tasks command - NOT created by /speckit-plan)
+├── plan.md              # This file (/speckit.plan command output)
+├── research.md          # Phase 0 output (/speckit.plan command)
+├── data-model.md        # Phase 1 output (/speckit.plan command)
+├── quickstart.md        # Phase 1 output (/speckit.plan command)
+├── contracts/           # Phase 1 output (/speckit.plan command)
+└── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
 ```
 
 ### Source Code (repository root)
