@@ -14,4 +14,18 @@ class CommunityMembershipLookupRequest(BaseModel):
 	user_id: UUID
 
 
-__all__ = ["CommunityLookupRequest", "CommunityMembershipLookupRequest"]
+class CommunityAccessLookupRequest(BaseModel):
+	community_id: UUID
+	viewer_id: UUID | None = None
+
+
+class AccessibleCommunitiesLookupRequest(BaseModel):
+	viewer_id: UUID | None = None
+
+
+__all__ = [
+	"AccessibleCommunitiesLookupRequest",
+	"CommunityAccessLookupRequest",
+	"CommunityLookupRequest",
+	"CommunityMembershipLookupRequest",
+]
