@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.communities.models.models import (
@@ -32,8 +32,29 @@ class CommunityRepository:
 		)
 		return list((await self._session.scalars(statement)).all())
 
+	async def list_accessible_ids(self, viewer_id: UUID | None) -> list[UUID]:
+		statement = select(Community.id)
+		if viewer_id is None:
+			statement = statement.where(Community.visibility == CommunityVisibility.PUBLIC)
+		else:
+			statement = statement.outerjoin(
+				CommunityMember,
+				(CommunityMember.community_id == Community.id) & (CommunityMember.user_id == viewer_id),
+			).where(
+				or_(
+					Community.visibility == CommunityVisibility.PUBLIC,
+					Community.owner_id == viewer_id,
+					CommunityMember.id.is_not(None),
+				)
+			)
+
+		statement = statement.order_by(Community.created_at.desc(), Community.id.desc())
+		return list((await self._session.scalars(statement)).all())
+
 	async def create_community(self, data: dict[str, Any]) -> Community:
-		community = Community(**data)
+		community_data = dict(data)
+		community_data["visibility"] = CommunityVisibility(community_data["visibility"])
+		community = Community(**community_data)
 		self._session.add(community)
 		await self._session.flush()
 		return community
@@ -44,6 +65,8 @@ class CommunityRepository:
 			return None
 
 		for field_name, value in data.items():
+			if field_name == "visibility":
+				value = CommunityVisibility(value)
 			setattr(community, field_name, value)
 
 		await self._session.flush()

@@ -26,7 +26,12 @@ class Community(CommunitiesBase):
 	name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
 	description: Mapped[str | None] = mapped_column(Text, nullable=True)
 	visibility: Mapped[CommunityVisibility] = mapped_column(
-		SqlEnum(CommunityVisibility, name="community_visibility", native_enum=False),
+		SqlEnum(
+			CommunityVisibility,
+			name="community_visibility",
+			native_enum=False,
+			values_callable=lambda enum_type: [item.value for item in enum_type],
+		),
 		nullable=False,
 		default=CommunityVisibility.PUBLIC,
 	)

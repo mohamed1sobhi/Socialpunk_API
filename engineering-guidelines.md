@@ -115,12 +115,13 @@ From the frontend perspective, each module API owns a distinct responsibility bo
 
 - `users/api/` owns non-system user registration, login, refresh-token flows, and user CRUD/profile operations.
 - `admins/api/` owns system-user CRUD, system-user login, refresh-token flows, and all system role/permission assignment or revocation flows.
-- Non-system users authenticate through `users/api/`, and their access tokens carry `system_permissions=[]`.
+- Non-system users authenticate through `users/api/`, and their access and refresh tokens omit `system_permissions`.
 - System users authenticate through `admins/api/`, and their access tokens carry `system_permissions` resolved from the admins module's role/permission model.
-- Both login surfaces must issue the same token envelope so the shared auth dependencies continue to work unchanged.
+- Both login surfaces must issue the same HTTP token-pair envelope so the shared auth dependencies continue to work unchanged.
 - `communities/api/` owns community lifecycle and membership workflows. If it needs to validate a user ID or fetch user data, it does so through its injected `UsersClient` calling the `users/public/` facade.
 - Communities roles and permissions are global reference data. `communities/api/` may list them and assign seeded roles to members after tenant membership is validated, but it may not create or mutate the default catalog.
-- Generic authenticated routes use `get_current_user` and then defer ownership, visibility, or membership checks to the owning domain service. For example, content visibility is enforced by the content module, not by shared auth helpers.
+- `content/api/` owns community-scoped posts. Every post requires a community, and post read access derives from that community's visibility and the requester's membership rather than a post-level visibility field.
+- Generic authenticated routes use `get_current_user` and then defer ownership, visibility, or membership checks to the owning domain service. Community-scoped content access is orchestrated by the content module using the communities module's access decisions, not by shared auth helpers.
 
 ---
 
@@ -164,7 +165,7 @@ From the frontend perspective, each module API owns a distinct responsibility bo
 - `AdminService` owns system-user CRUD, login, access-token issuance, refresh flows, and role/permission management for system users stored in `admins.users`.
 - `UserService` does **not** manage system users, system roles, or system permissions.
 - `AdminService` does **not** call the users module for system-user lifecycle or system-user login.
-- Both services must issue the same token envelope so `get_current_user` and `require_system_permission(...)` continue to work unchanged.
+- Both services must issue the same HTTP token-pair envelope so `get_current_user` and `require_system_permission(...)` continue to work unchanged.
 
 ### JWT Encoding Rules
 
@@ -175,12 +176,13 @@ From the frontend perspective, each module API owns a distinct responsibility bo
 - Access tokens must include at least:
       - `sub` — the user ID as a string
       - `token_type="access"`
-      - `system_permissions: list[str]`
+- Access tokens may include `system_permissions: list[str]`; absence means the subject has no system permissions.
 - Refresh tokens must include at least:
       - `sub`
       - `token_type="refresh"`
-- Non-system users must receive `system_permissions=[]` in access tokens.
+- Non-system user access and refresh tokens must omit `system_permissions`.
 - System users must receive `system_permissions` derived from the admins module's role/permission assignments.
+- Refresh tokens must omit `system_permissions` because permissions are resolved again when an access token is issued.
 
 ### JWT Decoding Rules
 
@@ -199,11 +201,11 @@ From the frontend perspective, each module API owns a distinct responsibility bo
       - return the raw claims `dict`
 - `require_system_permission(codename)` is the system-route dependency:
       - depend on `get_current_user`
-      - read `current_user["system_permissions"]`
+      - read `current_user.get("system_permissions", [])`
       - raise `ForbiddenError` when the permission is absent
 - The shared dependency layer is population-agnostic: it validates token claims only and does not care whether `sub` belongs to `users.users` or `admins.users`.
 - Generic authenticated routes use `get_current_user` only. Ownership, membership, visibility, and similar business rules are then evaluated manually by the owning route/service pair.
-- Shared auth helpers must not evaluate post visibility, community membership, resource ownership, or any other domain rule.
+- Shared auth helpers must not evaluate community-scoped content access, community membership, resource ownership, or any other domain rule.
 
 ### OAuth2 Login Input Contract
 
@@ -212,7 +214,7 @@ From the frontend perspective, each module API owns a distinct responsibility bo
 ### Request-Time Authorization Boundary
 
 - **No DB call is made at request time to resolve system permissions.** System-permission checks rely only on access-token claims.
-- Domain ownership and visibility checks are still allowed at request time, but they must happen inside the owning domain boundary. For example, content visibility is checked by the content module and private-community membership is checked by the communities module.
+- Domain ownership and visibility checks are still allowed at request time, but they must happen inside the owning domain boundary. Until database RLS becomes authoritative, content services enforce post access using visibility and membership decisions supplied through the communities module's public boundary.
 - `sub` must be resolved inside the owning domain boundary. A system-user token does not imply a matching row in `users.users`, and a non-system-user token does not imply a matching row in `admins.users`.
 
 ---
@@ -250,6 +252,7 @@ No module may introduce a dependency not listed in this graph.
 - Each PostgreSQL schema has its own declarative base in `app/shared/database/base.py`; that base defines its schema through `MetaData(schema=...)`.
 - Model classes inherit their owning schema base and must not repeat schema names in `__table_args__` or schema-qualify in-schema foreign-key targets.
 - Cross-schema references are soft references: UUID columns or UUID plus owning-scope fields, without hard foreign-key constraints.
+- `content.posts.community_id` is a required soft reference. Posts have no independent visibility column; public/private read access derives from the referenced community.
 - Hard foreign keys are only for tables inside the same PostgreSQL schema.
 - Alembic migrations define schema only. Seed rows, dummy data, role matrices, bootstrap users, and sample records are forbidden in migrations and runtime app code.
 - Alembic uses the synchronous `MIGRATION_DATABASE_URL` loaded from `.env` through `shared/config/settings.py`.

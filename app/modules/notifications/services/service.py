@@ -184,9 +184,6 @@ class NotificationService:
 		)
 
 	async def _on_post_created(self, event: PostCreatedEvent) -> None:
-		if event.visibility != "community" or event.community_id is None:
-			return
-
 		community_id = self._parse_uuid(event.community_id, label="community id")
 		author_id = self._parse_uuid(event.author_id, label="author id")
 		post_id = self._parse_uuid(event.post_id, label="post id")

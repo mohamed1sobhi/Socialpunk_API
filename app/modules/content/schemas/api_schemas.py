@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class CreatePostRequest(BaseModel):
-	model_config = ConfigDict(str_strip_whitespace=True)
+	model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
-	community_id: UUID | None = None
-	visibility: Literal["public", "private", "community"] = "public"
+	community_id: UUID
 	title: Annotated[str | None, Field(max_length=200)] = None
 	body: Annotated[str, Field(min_length=1)]
 
@@ -21,8 +20,7 @@ class PostResponse(BaseModel):
 
 	id: UUID
 	author_id: UUID
-	community_id: UUID | None
-	visibility: Literal["public", "private", "community"]
+	community_id: UUID
 	title: str | None
 	body: str
 	created_at: datetime

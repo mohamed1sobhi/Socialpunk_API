@@ -16,6 +16,7 @@ COMMUNITY_MEMBERS_MANAGE_PERMISSION = "communities.members.manage"
 class CommunityRepositoryProtocol(Protocol):
 	async def get_by_id(self, community_id: UUID) -> Any | None: ...
 	async def list_public(self) -> list[Any]: ...
+	async def list_accessible_ids(self, viewer_id: UUID | None) -> list[UUID]: ...
 	async def create_community(self, data: dict[str, Any]) -> Any: ...
 	async def add_member(self, data: dict[str, Any]) -> Any: ...
 	async def remove_member(self, user_id: UUID, community_id: UUID) -> bool: ...
@@ -79,6 +80,34 @@ class CommunityService:
 	async def list_public_communities(self) -> dict[str, Any]:
 		communities = await self._repo.list_public()
 		return {"communities": [self._community_to_payload(community) for community in communities]}
+
+	async def get_access(
+		self,
+		community_id: UUID | str,
+		viewer_id: UUID | str | None,
+	) -> dict[str, Any]:
+		normalized_community_id = self._parse_uuid(community_id, label="community id")
+		normalized_viewer_id = self._parse_optional_uuid(viewer_id, label="viewer id")
+		community = await self._require_existing_community(normalized_community_id)
+
+		is_member = False
+		if normalized_viewer_id is not None:
+			is_member = await self._repo.get_member(normalized_viewer_id, normalized_community_id) is not None
+
+		can_view = self._coerce_visibility(community.visibility) == "public"
+		if normalized_viewer_id is not None:
+			can_view = can_view or community.owner_id == normalized_viewer_id or is_member
+
+		return {
+			"community_id": normalized_community_id,
+			"can_view": can_view,
+			"is_member": is_member,
+		}
+
+	async def list_accessible_community_ids(self, viewer_id: UUID | str | None) -> dict[str, Any]:
+		normalized_viewer_id = self._parse_optional_uuid(viewer_id, label="viewer id")
+		community_ids = await self._repo.list_accessible_ids(normalized_viewer_id)
+		return {"community_ids": community_ids}
 
 	async def list_roles(self) -> dict[str, Any]:
 		roles = await self._repo.list_roles()
@@ -343,6 +372,11 @@ class CommunityService:
 			return UUID(value)
 		except (TypeError, ValueError) as exc:
 			raise ValidationError(f"Invalid {label}") from exc
+
+	def _parse_optional_uuid(self, value: UUID | str | None, *, label: str) -> UUID | None:
+		if value is None:
+			return None
+		return self._parse_uuid(value, label=label)
 
 	def _normalize_name(self, value: Any, *, label: str) -> str:
 		if not isinstance(value, str):

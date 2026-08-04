@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Sequence
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.content.models.models import Post, PostVisibility
+from app.modules.content.models.models import Post
 
 
 class ContentRepository:
@@ -23,35 +23,34 @@ class ContentRepository:
 		statement = select(Post).where(Post.id == post_id, Post.is_deleted.is_(False))
 		return await self._session.scalar(statement)
 
-	async def get_public_feed(self, limit: int, offset: int) -> list[Post]:
+	async def get_feed(self, community_ids: Sequence[UUID], limit: int, offset: int) -> list[Post]:
+		if not community_ids:
+			return []
+
 		statement = (
 			select(Post)
 			.where(
 				Post.is_deleted.is_(False),
-				Post.visibility == PostVisibility.PUBLIC,
+				Post.community_id.in_(list(community_ids)),
 			)
-			.order_by(Post.created_at.desc())
+			.order_by(Post.created_at.desc(), Post.id.desc())
 			.limit(limit)
 			.offset(offset)
 		)
 		return list((await self._session.scalars(statement)).all())
 
-	async def get_user_posts(self, author_id: UUID, viewer_id: UUID | None) -> list[Post]:
-		visibility_filters = [Post.visibility == PostVisibility.PUBLIC]
-		if viewer_id == author_id:
-			visibility_filters.append(Post.visibility == PostVisibility.PRIVATE)
-			visibility_filters.append(Post.visibility == PostVisibility.COMMUNITY)
-		else:
-			visibility_filters.append(Post.visibility == PostVisibility.COMMUNITY)
+	async def get_user_posts(self, author_id: UUID, community_ids: Sequence[UUID]) -> list[Post]:
+		if not community_ids:
+			return []
 
 		statement = (
 			select(Post)
 			.where(
 				Post.is_deleted.is_(False),
 				Post.author_id == author_id,
-				or_(*visibility_filters),
+				Post.community_id.in_(list(community_ids)),
 			)
-			.order_by(Post.created_at.desc())
+			.order_by(Post.created_at.desc(), Post.id.desc())
 		)
 		return list((await self._session.scalars(statement)).all())
 
@@ -61,9 +60,8 @@ class ContentRepository:
 			.where(
 				Post.is_deleted.is_(False),
 				Post.community_id == community_id,
-				Post.visibility == PostVisibility.COMMUNITY,
 			)
-			.order_by(Post.created_at.desc())
+			.order_by(Post.created_at.desc(), Post.id.desc())
 			.limit(limit)
 			.offset(offset)
 		)

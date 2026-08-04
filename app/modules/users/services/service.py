@@ -172,7 +172,7 @@ class UserService:
 
 	def _token_pair(self, user_id: UUID) -> dict[str, str]:
 		return {
-			"access_token": create_access_token(user_id, []),
+			"access_token": create_access_token(user_id),
 			"refresh_token": create_refresh_token(user_id),
 			"token_type": "bearer",
 		}

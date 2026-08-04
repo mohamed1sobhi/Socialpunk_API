@@ -17,7 +17,7 @@ class ContentUserPostsLookupRequest(BaseModel):
 
 class ContentCommunityPostsLookupRequest(BaseModel):
 	community_id: UUID
-	viewer_id: UUID
+	viewer_id: UUID | None = None
 	limit: int = 50
 	offset: int = 0
 

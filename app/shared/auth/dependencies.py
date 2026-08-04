@@ -21,14 +21,12 @@ def _require_string_claim(payload: dict[str, Any], key: str) -> str:
     return value
 
 
-def _require_permissions_claim(payload: dict[str, Any]) -> list[str]:
+def _validate_permissions_claim(payload: dict[str, Any]) -> None:
+    if "system_permissions" not in payload:
+        return
     permissions = payload.get("system_permissions")
-    if permissions is None:
-        payload["system_permissions"] = []
-        return []
     if not isinstance(permissions, list) or any(not isinstance(item, str) for item in permissions):
         raise UnauthorizedError("Invalid token payload")
-    return permissions
 
 
 async def get_current_user(token: str | None = Depends(oauth2_scheme)) -> dict[str, Any]:
@@ -38,7 +36,7 @@ async def get_current_user(token: str | None = Depends(oauth2_scheme)) -> dict[s
     payload = decode_token(token)
     _require_string_claim(payload, "sub")
     token_type = _require_string_claim(payload, "token_type")
-    _require_permissions_claim(payload)
+    _validate_permissions_claim(payload)
 
     if token_type != "access":
         raise UnauthorizedError("Access token required")
