@@ -24,6 +24,8 @@ def _validate_subject(subject: UUID | str) -> str:
 
 
 def _validate_permissions(system_permissions: Sequence[str] | None) -> list[str]:
+    if isinstance(system_permissions, str):
+        raise ValueError("System permissions must be a sequence of non-empty strings")
     permissions = list(system_permissions or [])
     if any(not isinstance(permission, str) or not permission for permission in permissions):
         raise ValueError("System permissions must be a sequence of non-empty strings")
@@ -39,18 +41,22 @@ def _encode_token(
     now = datetime.now(timezone.utc)
     issued_at = int(now.timestamp())
     expires_at = int((now + expires_delta).timestamp())
-    payload = {
+    payload: dict[str, Any] = {
         "sub": _validate_subject(subject),
-        "system_permissions": _validate_permissions(system_permissions),
         "token_type": token_type,
         "iat": issued_at,
         "exp": expires_at,
         "jti": str(uuid4()),
     }
+    if system_permissions is not None:
+        payload["system_permissions"] = _validate_permissions(system_permissions)
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def create_access_token(subject: UUID | str, system_permissions: Sequence[str]) -> str:
+def create_access_token(
+    subject: UUID | str,
+    system_permissions: Sequence[str] | None = None,
+) -> str:
     return _encode_token(
         subject=subject,
         token_type="access",
