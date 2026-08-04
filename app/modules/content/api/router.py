@@ -38,12 +38,14 @@ async def create_post(
 
 
 @router.get("/posts", response_model=PostListResponse)
-async def list_public_feed(
+async def list_feed(
+	current_user: Annotated[dict[str, Any] | None, Depends(_get_optional_current_user)],
 	service: Annotated[Any, Depends(get_content_service)],
 	limit: Annotated[int, Query(ge=1, le=100)] = 50,
 	offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PostListResponse:
-	posts = await service.list_public_feed(limit=limit, offset=offset)
+	viewer_id = current_user["sub"] if current_user is not None else None
+	posts = await service.list_feed(viewer_id, limit=limit, offset=offset)
 	return PostListResponse.model_validate(posts)
 
 
@@ -83,14 +85,15 @@ async def list_user_posts(
 @router.get("/communities/{community_id}/posts", response_model=CommunityPostsResponse)
 async def list_community_posts(
 	community_id: UUID,
-	current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+	current_user: Annotated[dict[str, Any] | None, Depends(_get_optional_current_user)],
 	service: Annotated[Any, Depends(get_content_service)],
 	limit: Annotated[int, Query(ge=1, le=100)] = 50,
 	offset: Annotated[int, Query(ge=0)] = 0,
 ) -> CommunityPostsResponse:
+	viewer_id = current_user["sub"] if current_user is not None else None
 	posts = await service.list_community_posts(
 		community_id,
-		current_user["sub"],
+		viewer_id,
 		limit=limit,
 		offset=offset,
 	)

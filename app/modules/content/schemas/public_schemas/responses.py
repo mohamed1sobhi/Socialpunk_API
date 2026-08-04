@@ -13,4 +13,18 @@ class ContentCommunityMembershipResponse(BaseModel):
 	is_member: bool
 
 
-__all__ = ["ContentCommunityMembershipResponse"]
+class ContentCommunityAccessResponse(BaseModel):
+	community_id: UUID
+	can_view: bool
+	is_member: bool
+
+
+class ContentAccessibleCommunityIdsResponse(BaseModel):
+	community_ids: list[UUID]
+
+
+__all__ = [
+	"ContentAccessibleCommunityIdsResponse",
+	"ContentCommunityAccessResponse",
+	"ContentCommunityMembershipResponse",
+]

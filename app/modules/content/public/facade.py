@@ -16,7 +16,7 @@ class ContentServiceProtocol(Protocol):
 	async def list_community_posts(
 		self,
 		community_id: UUID | str,
-		viewer_id: UUID | str,
+		viewer_id: UUID | str | None,
 		*,
 		limit: int,
 		offset: int,
@@ -46,7 +46,7 @@ class ContentFacade:
 	async def list_community_posts(
 		self,
 		community_id: UUID | str,
-		viewer_id: UUID | str,
+		viewer_id: UUID | str | None = None,
 		*,
 		limit: int = 50,
 		offset: int = 0,

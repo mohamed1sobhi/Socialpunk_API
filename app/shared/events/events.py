@@ -39,8 +39,7 @@ class MemberLeftEvent(DomainEvent):
 class PostCreatedEvent(DomainEvent):
     post_id: str
     author_id: str
-    community_id: str | None
-    visibility: str
+    community_id: str
 
 
 __all__ = [
