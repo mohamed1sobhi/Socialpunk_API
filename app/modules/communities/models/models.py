@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum as SqlEnum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum as SqlEnum, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.shared.database.base import CommunitiesBase
@@ -49,40 +49,18 @@ class CommunityRole(CommunitiesBase):
 
 	id: Mapped[UUID] = mapped_column(primary_key=True)
 	name: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
-
-	role_permissions: Mapped[list[CommunityRolePermission]] = relationship(
-		back_populates="role",
-		cascade="all, delete-orphan",
-	)
+	can_manage_members: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+	can_read_roles: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 	members: Mapped[list[CommunityMember]] = relationship(back_populates="role")
 
-
-class CommunityPermission(CommunitiesBase):
-	__tablename__ = "community_permissions"
-
-	id: Mapped[UUID] = mapped_column(primary_key=True)
-	name: Mapped[str] = mapped_column(String(150), unique=True, index=True, nullable=False)
-
-	role_permissions: Mapped[list[CommunityRolePermission]] = relationship(
-		back_populates="permission",
-		cascade="all, delete-orphan",
-	)
-
-
-class CommunityRolePermission(CommunitiesBase):
-	__tablename__ = "community_role_permissions"
-
-	role_id: Mapped[UUID] = mapped_column(
-		ForeignKey("community_roles.id", ondelete="CASCADE"),
-		primary_key=True,
-	)
-	permission_id: Mapped[UUID] = mapped_column(
-		ForeignKey("community_permissions.id", ondelete="CASCADE"),
-		primary_key=True,
-	)
-
-	role: Mapped[CommunityRole] = relationship(back_populates="role_permissions")
-	permission: Mapped[CommunityPermission] = relationship(back_populates="role_permissions")
+	@property
+	def permission_names(self) -> list[str]:
+		permissions: list[str] = []
+		if self.can_manage_members:
+			permissions.append("communities.members.manage")
+		if self.can_read_roles:
+			permissions.append("communities.roles.read")
+		return permissions
 
 
 class CommunityMember(CommunitiesBase):
@@ -112,8 +90,6 @@ class CommunityMember(CommunitiesBase):
 __all__ = [
 	"Community",
 	"CommunityMember",
-	"CommunityPermission",
 	"CommunityRole",
-	"CommunityRolePermission",
 	"CommunityVisibility",
 ]

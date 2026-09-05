@@ -39,23 +39,33 @@ class RoleCreateRequest(BaseModel):
 
 	name: Annotated[str, Field(min_length=1, max_length=100)]
 	description: Annotated[str | None, Field(max_length=500)] = None
+	can_manage_system_users: bool = False
+	can_read_system_users: bool = False
+	can_manage_roles: bool = False
+	can_read_system_permissions: bool = False
 
 
-class PermissionCreateRequest(BaseModel):
+class RoleUpdateRequest(BaseModel):
 	model_config = ConfigDict(str_strip_whitespace=True)
 
-	name: Annotated[str, Field(min_length=1, max_length=150)]
+	name: Annotated[str | None, Field(min_length=1, max_length=100)] = None
 	description: Annotated[str | None, Field(max_length=500)] = None
+	can_manage_system_users: bool | None = None
+	can_read_system_users: bool | None = None
+	can_manage_roles: bool | None = None
+	can_read_system_permissions: bool | None = None
+
+	@model_validator(mode="after")
+	def validate_non_empty_update(self) -> Self:
+		if not self.model_fields_set:
+			raise ValueError("At least one role field must be provided")
+		return self
 
 
 class RoleAssignmentRequest(BaseModel):
 	model_config = ConfigDict(str_strip_whitespace=True)
 
 	role_name: Annotated[str, Field(min_length=1, max_length=100)]
-
-
-class PermissionAssignmentRequest(BaseModel):
-	permission_id: UUID
 
 
 class TokenPairResponse(BaseModel):
@@ -81,14 +91,14 @@ class RoleResponse(BaseModel):
 	id: UUID
 	name: str
 	description: str | None
+	can_manage_system_users: bool
+	can_read_system_users: bool
+	can_manage_roles: bool
+	can_read_system_permissions: bool
 
 
-class PermissionResponse(BaseModel):
-	model_config = ConfigDict(from_attributes=True)
-
-	id: UUID
-	name: str
-	description: str | None
+class RoleListResponse(BaseModel):
+	roles: list[RoleResponse]
 
 
 class RoleAssignmentResponse(BaseModel):
@@ -98,28 +108,19 @@ class RoleAssignmentResponse(BaseModel):
 	assigned_at: datetime
 
 
-class RolePermissionAssignmentResponse(BaseModel):
-	role_id: UUID
-	role_name: str
-	permission_id: UUID
-	permission_name: str
-
-
 class SystemUserPermissionsResponse(BaseModel):
 	user_id: UUID
 	permissions: list[str]
 
 
 __all__ = [
-	"PermissionAssignmentRequest",
-	"PermissionCreateRequest",
-	"PermissionResponse",
 	"RefreshTokenRequest",
 	"RoleAssignmentRequest",
 	"RoleAssignmentResponse",
 	"RoleCreateRequest",
-	"RolePermissionAssignmentResponse",
+	"RoleListResponse",
 	"RoleResponse",
+	"RoleUpdateRequest",
 	"SystemUserCreateRequest",
 	"SystemUserPermissionsResponse",
 	"SystemUserResponse",

@@ -119,7 +119,7 @@ From the frontend perspective, each module API owns a distinct responsibility bo
 - System users authenticate through `admins/api/`, and their access tokens carry `system_permissions` resolved from the admins module's role/permission model.
 - Both login surfaces must issue the same HTTP token-pair envelope so the shared auth dependencies continue to work unchanged.
 - `communities/api/` owns community lifecycle and membership workflows. If it needs to validate a user ID or fetch user data, it does so through its injected `UsersClient` calling the `users/public/` facade.
-- Communities roles and permissions are global reference data. `communities/api/` may list them and assign seeded roles to members after tenant membership is validated, but it may not create or mutate the default catalog.
+- Community roles are global reference data seeded by `scripts/seed_communities.py`. Community permissions are fixed code-defined names represented by boolean columns on role rows. `communities/api/` may list the fixed catalog and assign seeded roles to members after tenant membership is validated, but it may not create or mutate the default catalog.
 - `content/api/` owns community-scoped posts. Every post requires a community, and post read access derives from that community's visibility and the requester's membership rather than a post-level visibility field.
 - Generic authenticated routes use `get_current_user` and then defer ownership, visibility, or membership checks to the owning domain service. Community-scoped content access is orchestrated by the content module using the communities module's access decisions, not by shared auth helpers.
 
@@ -315,7 +315,7 @@ async with AsyncSessionLocal() as session:
 - Seed scripts own their own `AsyncSessionLocal` lifecycle, perform explicit commit/rollback, close the session in `finally`, and dispose the engine before exiting.
 - `main.py`, service constructors, and request handlers must never invoke seeding logic implicitly.
 - If a module requires initial data such as system roles/permissions, that requirement must be documented beside a corresponding seed script rather than implemented as hidden startup behavior.
-- Communities role and permission reference rows are seeded only by `scripts/seed_communities.py`; runtime code may list and assign them, but it must not create or mutate the default catalog.
+- Community role reference rows are seeded only by `scripts/seed_communities.py`. Community permissions are fixed code-defined values rather than database rows; runtime code may list the fixed definitions and assign seeded roles, but it must not create or mutate the default catalog.
 
 ---
 

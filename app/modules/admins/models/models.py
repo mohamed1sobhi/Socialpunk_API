@@ -32,38 +32,25 @@ class Role(AdminsBase):
 	id: Mapped[UUID] = mapped_column(primary_key=True)
 	name: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
 	description: Mapped[str | None] = mapped_column(Text, nullable=True)
+	can_manage_system_users: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+	can_read_system_users: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+	can_manage_roles: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+	can_read_system_permissions: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-	role_permissions: Mapped[list[RolePermission]] = relationship(
-		back_populates="role",
-		cascade="all, delete-orphan",
-	)
 	user_roles: Mapped[list[UserRole]] = relationship(back_populates="role", cascade="all, delete-orphan")
 
-
-class Permission(AdminsBase):
-	__tablename__ = "permissions"
-
-	id: Mapped[UUID] = mapped_column(primary_key=True)
-	name: Mapped[str] = mapped_column(String(150), unique=True, index=True, nullable=False)
-	description: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-	role_permissions: Mapped[list[RolePermission]] = relationship(
-		back_populates="permission",
-		cascade="all, delete-orphan",
-	)
-
-
-class RolePermission(AdminsBase):
-	__tablename__ = "role_permissions"
-
-	role_id: Mapped[UUID] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
-	permission_id: Mapped[UUID] = mapped_column(
-		ForeignKey("permissions.id", ondelete="CASCADE"),
-		primary_key=True,
-	)
-
-	role: Mapped[Role] = relationship(back_populates="role_permissions")
-	permission: Mapped[Permission] = relationship(back_populates="role_permissions")
+	@property
+	def permission_names(self) -> list[str]:
+		permissions: list[str] = []
+		if self.can_manage_system_users:
+			permissions.append("admins.system_users.manage")
+		if self.can_read_system_users:
+			permissions.append("admins.system_users.read")
+		if self.can_manage_roles:
+			permissions.append("admins.roles.manage")
+		if self.can_read_system_permissions:
+			permissions.append("admins.system_permissions.read")
+		return permissions
 
 
 class UserRole(AdminsBase):
@@ -77,4 +64,4 @@ class UserRole(AdminsBase):
 	role: Mapped[Role] = relationship(back_populates="user_roles")
 
 
-__all__ = ["AdminUser", "Permission", "Role", "RolePermission", "UserRole"]
+__all__ = ["AdminUser", "Role", "UserRole"]

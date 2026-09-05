@@ -7,15 +7,13 @@ from fastapi import APIRouter, Depends, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.modules.admins.schemas.api_schemas import (
-	PermissionAssignmentRequest,
-	PermissionCreateRequest,
-	PermissionResponse,
 	RefreshTokenRequest,
 	RoleAssignmentRequest,
 	RoleAssignmentResponse,
 	RoleCreateRequest,
-	RolePermissionAssignmentResponse,
+	RoleListResponse,
 	RoleResponse,
+	RoleUpdateRequest,
 	SystemUserCreateRequest,
 	SystemUserPermissionsResponse,
 	SystemUserResponse,
@@ -29,7 +27,6 @@ from app.shared.dependencies.admins_deps import get_admin_service
 MANAGE_SYSTEM_USERS_PERMISSION = "admins.system_users.manage"
 VIEW_SYSTEM_USERS_PERMISSION = "admins.system_users.read"
 MANAGE_ROLES_PERMISSION = "admins.roles.manage"
-MANAGE_PERMISSIONS_PERMISSION = "admins.permissions.manage"
 VIEW_SYSTEM_PERMISSIONS_PERMISSION = "admins.system_permissions.read"
 
 
@@ -106,6 +103,16 @@ async def deactivate_system_user(
 	return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.get("/roles", response_model=RoleListResponse)
+async def list_roles(
+	current_user: Annotated[dict[str, Any], Depends(require_system_permission(MANAGE_ROLES_PERMISSION))],
+	service: Annotated[Any, Depends(get_admin_service)],
+) -> RoleListResponse:
+	del current_user
+	roles = await service.list_roles()
+	return RoleListResponse.model_validate(roles)
+
+
 @router.post("/roles", response_model=RoleResponse, status_code=status.HTTP_201_CREATED)
 async def create_role(
 	payload: RoleCreateRequest,
@@ -113,35 +120,24 @@ async def create_role(
 	service: Annotated[Any, Depends(get_admin_service)],
 ) -> RoleResponse:
 	del current_user
-	role = await service.create_role(name=payload.name, description=payload.description)
+	role = await service.create_role(
+		name=payload.name,
+		description=payload.description,
+		permission_flags=payload.model_dump(exclude={"name", "description"}),
+	)
 	return RoleResponse.model_validate(role)
 
 
-@router.post("/permissions", response_model=PermissionResponse, status_code=status.HTTP_201_CREATED)
-async def create_permission(
-	payload: PermissionCreateRequest,
-	current_user: Annotated[dict[str, Any], Depends(require_system_permission(MANAGE_PERMISSIONS_PERMISSION))],
-	service: Annotated[Any, Depends(get_admin_service)],
-) -> PermissionResponse:
-	del current_user
-	permission = await service.create_permission(name=payload.name, description=payload.description)
-	return PermissionResponse.model_validate(permission)
-
-
-@router.post(
-	"/roles/{role_id}/permissions",
-	response_model=RolePermissionAssignmentResponse,
-	status_code=status.HTTP_201_CREATED,
-)
-async def assign_permission_to_role(
+@router.patch("/roles/{role_id}", response_model=RoleResponse)
+async def update_role(
 	role_id: UUID,
-	payload: PermissionAssignmentRequest,
+	payload: RoleUpdateRequest,
 	current_user: Annotated[dict[str, Any], Depends(require_system_permission(MANAGE_ROLES_PERMISSION))],
 	service: Annotated[Any, Depends(get_admin_service)],
-) -> RolePermissionAssignmentResponse:
+) -> RoleResponse:
 	del current_user
-	assignment = await service.assign_permission_to_role(role_id, permission_id=payload.permission_id)
-	return RolePermissionAssignmentResponse.model_validate(assignment)
+	role = await service.update_role(role_id, payload.model_dump(exclude_unset=True))
+	return RoleResponse.model_validate(role)
 
 
 @router.post(

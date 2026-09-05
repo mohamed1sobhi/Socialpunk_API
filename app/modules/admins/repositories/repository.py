@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.admins.models.models import AdminUser, Permission, Role, RolePermission, UserRole
+from app.modules.admins.models.models import AdminUser, Role, UserRole
 
 
 class AdminRepository:
@@ -65,32 +65,20 @@ class AdminRepository:
 		await self._session.flush()
 		return role
 
-	async def get_permission_by_id(self, permission_id: UUID) -> Permission | None:
-		statement = select(Permission).where(Permission.id == permission_id)
-		return await self._session.scalar(statement)
+	async def list_roles(self) -> list[Role]:
+		statement = select(Role).order_by(Role.name.asc())
+		return list((await self._session.scalars(statement)).all())
 
-	async def get_permission_by_name(self, name: str) -> Permission | None:
-		statement = select(Permission).where(Permission.name == name)
-		return await self._session.scalar(statement)
+	async def update_role(self, role_id: UUID, data: dict[str, Any]) -> Role | None:
+		role = await self.get_role_by_id(role_id)
+		if role is None:
+			return None
 
-	async def create_permission(self, data: dict[str, Any]) -> Permission:
-		permission = Permission(**data)
-		self._session.add(permission)
+		for field_name, value in data.items():
+			setattr(role, field_name, value)
+
 		await self._session.flush()
-		return permission
-
-	async def get_role_permission(self, role_id: UUID, permission_id: UUID) -> RolePermission | None:
-		statement = select(RolePermission).where(
-			RolePermission.role_id == role_id,
-			RolePermission.permission_id == permission_id,
-		)
-		return await self._session.scalar(statement)
-
-	async def assign_permission_to_role(self, role_id: UUID, permission_id: UUID) -> RolePermission:
-		role_permission = RolePermission(role_id=role_id, permission_id=permission_id)
-		self._session.add(role_permission)
-		await self._session.flush()
-		return role_permission
+		return role
 
 	async def get_user_role(self, user_id: UUID, role_id: UUID) -> UserRole | None:
 		statement = select(UserRole).where(UserRole.user_id == user_id, UserRole.role_id == role_id)
@@ -122,16 +110,8 @@ class AdminRepository:
 		return list(result)
 
 	async def get_user_permissions(self, user_id: UUID) -> list[str]:
-		statement = (
-			select(Permission.name)
-			.join(RolePermission, RolePermission.permission_id == Permission.id)
-			.join(UserRole, UserRole.role_id == RolePermission.role_id)
-			.where(UserRole.user_id == user_id)
-			.distinct()
-			.order_by(Permission.name.asc())
-		)
-		result = await self._session.scalars(statement)
-		return list(result)
+		roles = await self.get_user_roles(user_id)
+		return sorted({permission for role in roles for permission in role.permission_names})
 
 
 __all__ = ["AdminRepository"]

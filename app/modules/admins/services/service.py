@@ -13,6 +13,14 @@ from app.shared.auth.jwt import (
 from app.shared.exceptions.handlers import ConflictError, NotFoundError, UnauthorizedError, ValidationError
 
 
+ROLE_PERMISSION_FIELDS = (
+	"can_manage_system_users",
+	"can_read_system_users",
+	"can_manage_roles",
+	"can_read_system_permissions",
+)
+
+
 class AdminRepositoryProtocol(Protocol):
 	async def get_user_by_id(self, user_id: UUID) -> Any | None: ...
 	async def get_user_by_email(self, email: str) -> Any | None: ...
@@ -22,12 +30,9 @@ class AdminRepositoryProtocol(Protocol):
 	async def deactivate_user(self, user_id: UUID) -> Any | None: ...
 	async def get_role_by_id(self, role_id: UUID) -> Any | None: ...
 	async def get_role_by_name(self, name: str) -> Any | None: ...
+	async def list_roles(self) -> list[Any]: ...
 	async def create_role(self, data: dict[str, Any]) -> Any: ...
-	async def get_permission_by_id(self, permission_id: UUID) -> Any | None: ...
-	async def get_permission_by_name(self, name: str) -> Any | None: ...
-	async def create_permission(self, data: dict[str, Any]) -> Any: ...
-	async def get_role_permission(self, role_id: UUID, permission_id: UUID) -> Any | None: ...
-	async def assign_permission_to_role(self, role_id: UUID, permission_id: UUID) -> Any: ...
+	async def update_role(self, role_id: UUID, data: dict[str, Any]) -> Any | None: ...
 	async def get_user_role(self, user_id: UUID, role_id: UUID) -> Any | None: ...
 	async def assign_role_to_user(self, user_id: UUID, role_id: UUID) -> Any: ...
 	async def revoke_role_from_user(self, user_id: UUID, role_id: UUID) -> bool: ...
@@ -193,56 +198,62 @@ class AdminService:
 			"permissions": permissions,
 		}
 
-	async def create_role(self, *, name: str, description: str | None = None) -> dict[str, Any]:
+	async def list_roles(self) -> dict[str, Any]:
+		roles = await self._repo.list_roles()
+		return {"roles": [self._role_to_payload(role) for role in roles]}
+
+	async def create_role(
+		self,
+		*,
+		name: str,
+		description: str | None = None,
+		permission_flags: dict[str, Any] | None = None,
+	) -> dict[str, Any]:
 		normalized_name = self._normalize_name(name, label="role name")
 		if await self._repo.get_role_by_name(normalized_name):
 			raise ConflictError("Role already exists")
 
+		role_data = {
+			"id": uuid4(),
+			"name": normalized_name,
+			"description": self._normalize_optional_text(description),
+		}
+		role_data.update({field_name: False for field_name in ROLE_PERMISSION_FIELDS})
+		role_data.update(self._normalize_role_permission_flags(permission_flags or {}))
 		role = await self._repo.create_role(
-			{
-				"id": uuid4(),
-				"name": normalized_name,
-				"description": self._normalize_optional_text(description),
-			}
+			role_data
 		)
 		return self._role_to_payload(role)
 
-	async def create_permission(self, *, name: str, description: str | None = None) -> dict[str, Any]:
-		normalized_name = self._normalize_name(name, label="permission name")
-		if await self._repo.get_permission_by_name(normalized_name):
-			raise ConflictError("Permission already exists")
-
-		permission = await self._repo.create_permission(
-			{
-				"id": uuid4(),
-				"name": normalized_name,
-				"description": self._normalize_optional_text(description),
-			}
-		)
-		return self._permission_to_payload(permission)
-
-	async def assign_permission_to_role(
-		self,
-		role_id: UUID | str,
-		*,
-		permission_id: UUID | str,
-	) -> dict[str, Any]:
+	async def update_role(self, role_id: UUID | str, data: dict[str, Any]) -> dict[str, Any]:
 		normalized_role_id = self._parse_uuid(role_id, label="role id")
-		normalized_permission_id = self._parse_uuid(permission_id, label="permission id")
-
-		role = await self._repo.get_role_by_id(normalized_role_id)
-		if role is None:
+		current_role = await self._repo.get_role_by_id(normalized_role_id)
+		if current_role is None:
 			raise NotFoundError("Role not found")
 
-		permission = await self._repo.get_permission_by_id(normalized_permission_id)
-		if permission is None:
-			raise NotFoundError("Permission not found")
+		updates: dict[str, Any] = {}
+		if "name" in data:
+			name = self._normalize_name(data.get("name"), label="role name")
+			existing_role = await self._repo.get_role_by_name(name)
+			if existing_role is not None and existing_role.id != normalized_role_id:
+				raise ConflictError("Role already exists")
+			updates["name"] = name
 
-		if await self._repo.get_role_permission(normalized_role_id, normalized_permission_id):
-			raise ConflictError("Permission is already assigned to the role")
+		if "description" in data:
+			updates["description"] = self._normalize_optional_text(data.get("description"))
 
-		await self._repo.assign_permission_to_role(normalized_role_id, normalized_permission_id)
-		return self._role_permission_to_payload(role, permission)
+		updates.update(
+			self._normalize_role_permission_flags(
+				{field_name: data[field_name] for field_name in ROLE_PERMISSION_FIELDS if field_name in data}
+			)
+		)
+		if not updates:
+			raise ValidationError("At least one role field must be provided")
+
+		updated_role = await self._repo.update_role(normalized_role_id, updates)
+		if updated_role is None:
+			raise NotFoundError("Role not found")
+		return self._role_to_payload(updated_role)
 
 	async def _ensure_unique_credentials(self, username: str, email: str) -> None:
 		if await self._repo.get_user_by_username(username):
@@ -303,7 +314,10 @@ class AdminService:
 			raise ValidationError("Username must not be empty")
 		return normalized_username
 
-	def _normalize_name(self, value: str, *, label: str) -> str:
+	def _normalize_name(self, value: Any, *, label: str) -> str:
+		if not isinstance(value, str):
+			raise ValidationError(f"{label.capitalize()} must be a string")
+
 		normalized_value = value.strip()
 		if not normalized_value:
 			raise ValidationError(f"{label.capitalize()} must not be empty")
@@ -316,6 +330,16 @@ class AdminService:
 			raise ValidationError("Description must be a string or null")
 		normalized_value = value.strip()
 		return normalized_value or None
+
+	def _normalize_role_permission_flags(self, values: dict[str, Any]) -> dict[str, bool]:
+		flags: dict[str, bool] = {}
+		for field_name, value in values.items():
+			if field_name not in ROLE_PERMISSION_FIELDS:
+				continue
+			if not isinstance(value, bool):
+				raise ValidationError(f"{field_name} must be a boolean")
+			flags[field_name] = value
+		return flags
 
 	def _validate_password(self, password: str) -> None:
 		if len(password) < 8:
@@ -336,13 +360,10 @@ class AdminService:
 			"id": role.id,
 			"name": role.name,
 			"description": role.description,
-		}
-
-	def _permission_to_payload(self, permission: Any) -> dict[str, Any]:
-		return {
-			"id": permission.id,
-			"name": permission.name,
-			"description": permission.description,
+			"can_manage_system_users": role.can_manage_system_users,
+			"can_read_system_users": role.can_read_system_users,
+			"can_manage_roles": role.can_manage_roles,
+			"can_read_system_permissions": role.can_read_system_permissions,
 		}
 
 	def _role_assignment_to_payload(self, user_role: Any, role: Any) -> dict[str, Any]:
@@ -352,14 +373,5 @@ class AdminService:
 			"role_name": role.name,
 			"assigned_at": user_role.assigned_at,
 		}
-
-	def _role_permission_to_payload(self, role: Any, permission: Any) -> dict[str, Any]:
-		return {
-			"role_id": role.id,
-			"role_name": role.name,
-			"permission_id": permission.id,
-			"permission_name": permission.name,
-		}
-
 
 __all__ = ["AdminService"]

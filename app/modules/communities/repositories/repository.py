@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -9,9 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.communities.models.models import (
 	Community,
 	CommunityMember,
-	CommunityPermission,
 	CommunityRole,
-	CommunityRolePermission,
 	CommunityVisibility,
 )
 
@@ -93,57 +91,9 @@ class CommunityRepository:
 		statement = select(CommunityRole).order_by(CommunityRole.name.asc())
 		return list((await self._session.scalars(statement)).all())
 
-	async def create_role(self, data: dict[str, Any]) -> CommunityRole:
-		role = CommunityRole(**data)
-		self._session.add(role)
-		await self._session.flush()
-		return role
-
-	async def get_permission_by_name(self, name: str) -> CommunityPermission | None:
-		statement = select(CommunityPermission).where(CommunityPermission.name == name)
-		return await self._session.scalar(statement)
-
-	async def get_permissions_by_names(self, names: Sequence[str]) -> list[CommunityPermission]:
-		if not names:
-			return []
-
-		statement = (
-			select(CommunityPermission)
-			.where(CommunityPermission.name.in_(list(names)))
-			.order_by(CommunityPermission.name.asc())
-		)
-		return list((await self._session.scalars(statement)).all())
-
-	async def list_permissions(self) -> list[CommunityPermission]:
-		statement = select(CommunityPermission).order_by(CommunityPermission.name.asc())
-		return list((await self._session.scalars(statement)).all())
-
 	async def get_permissions_for_role(self, role_id: UUID) -> list[str]:
-		statement = (
-			select(CommunityPermission.name)
-			.join(CommunityRolePermission, CommunityRolePermission.permission_id == CommunityPermission.id)
-			.where(CommunityRolePermission.role_id == role_id)
-			.order_by(CommunityPermission.name.asc())
-		)
-		return list((await self._session.scalars(statement)).all())
-
-	async def get_role_permission(
-		self,
-		*,
-		role_id: UUID,
-		permission_id: UUID,
-	) -> CommunityRolePermission | None:
-		statement = select(CommunityRolePermission).where(
-			CommunityRolePermission.role_id == role_id,
-			CommunityRolePermission.permission_id == permission_id,
-		)
-		return await self._session.scalar(statement)
-
-	async def assign_permission_to_role(self, role_id: UUID, permission_id: UUID) -> CommunityRolePermission:
-		role_permission = CommunityRolePermission(role_id=role_id, permission_id=permission_id)
-		self._session.add(role_permission)
-		await self._session.flush()
-		return role_permission
+		role = await self.get_role_by_id(role_id)
+		return [] if role is None else role.permission_names
 
 	async def add_member(self, data: dict[str, Any]) -> CommunityMember:
 		member = CommunityMember(**data)
@@ -184,17 +134,15 @@ class CommunityRepository:
 
 	async def get_member_permissions(self, user_id: UUID, community_id: UUID) -> list[str]:
 		statement = (
-			select(CommunityPermission.name)
-			.join(CommunityRolePermission, CommunityRolePermission.permission_id == CommunityPermission.id)
-			.join(CommunityMember, CommunityMember.role_id == CommunityRolePermission.role_id)
+			select(CommunityRole)
+			.join(CommunityMember, CommunityMember.role_id == CommunityRole.id)
 			.where(
 				CommunityMember.user_id == user_id,
 				CommunityMember.community_id == community_id,
 			)
-			.distinct()
-			.order_by(CommunityPermission.name.asc())
 		)
-		return list((await self._session.scalars(statement)).all())
+		roles = list((await self._session.scalars(statement)).all())
+		return sorted({permission for role in roles for permission in role.permission_names})
 
 	async def get_communities_for_user(self, user_id: UUID) -> list[Community]:
 		statement = (
