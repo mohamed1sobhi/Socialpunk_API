@@ -22,9 +22,12 @@ def test_admin_role_exposes_enabled_fixed_permissions() -> None:
 		can_read_system_users=False,
 		can_manage_roles=True,
 		can_read_system_permissions=False,
+		can_delete_posts=False,
 	)
 
 	assert role.permission_names == ["admins.system_users.manage", "admins.roles.manage"]
+	role.can_delete_posts = True
+	assert role.permission_names[-1] == "content.posts.delete"
 
 
 def test_community_role_exposes_enabled_fixed_permissions() -> None:
@@ -51,6 +54,7 @@ def test_role_request_supports_fixed_permission_flags() -> None:
 	create_request = RoleCreateRequest(name="moderator", can_manage_roles=True)
 	assert create_request.can_manage_roles is True
 	assert create_request.can_manage_system_users is False
+	assert create_request.can_delete_posts is False
 
 	update_request = RoleUpdateRequest(can_read_system_users=True)
 	assert update_request.model_dump(exclude_unset=True) == {"can_read_system_users": True}
@@ -78,6 +82,7 @@ class FakeAdminRoleRepository:
 			"can_read_system_users",
 			"can_manage_roles",
 			"can_read_system_permissions",
+			"can_delete_posts",
 		):
 			data.setdefault(field_name, False)
 		role = SimpleNamespace(**data)
@@ -106,10 +111,13 @@ async def test_admin_service_creates_and_updates_fixed_role_flags() -> None:
 
 	assert created["can_manage_system_users"] is True
 	assert created["can_manage_roles"] is False
+	assert created["can_delete_posts"] is False
 
 	updated = await service.update_role(role_id, {"can_manage_roles": True})
 	assert updated["can_manage_system_users"] is True
 	assert updated["can_manage_roles"] is True
+	updated = await service.update_role(role_id, {"can_delete_posts": True})
+	assert updated["can_delete_posts"] is True
 
 
 @pytest.mark.asyncio

@@ -43,6 +43,7 @@ class RoleCreateRequest(BaseModel):
 	can_read_system_users: bool = False
 	can_manage_roles: bool = False
 	can_read_system_permissions: bool = False
+	can_delete_posts: bool = False
 
 
 class RoleUpdateRequest(BaseModel):
@@ -54,6 +55,7 @@ class RoleUpdateRequest(BaseModel):
 	can_read_system_users: bool | None = None
 	can_manage_roles: bool | None = None
 	can_read_system_permissions: bool | None = None
+	can_delete_posts: bool | None = None
 
 	@model_validator(mode="after")
 	def validate_non_empty_update(self) -> Self:
@@ -95,6 +97,7 @@ class RoleResponse(BaseModel):
 	can_read_system_users: bool
 	can_manage_roles: bool
 	can_read_system_permissions: bool
+	can_delete_posts: bool
 
 
 class RoleListResponse(BaseModel):

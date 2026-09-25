@@ -18,6 +18,7 @@ DEFAULT_ROLES: tuple[dict[str, str | bool], ...] = (
 		"can_read_system_users": True,
 		"can_manage_roles": True,
 		"can_read_system_permissions": True,
+		"can_delete_posts": True,
 	},
 )
 
@@ -41,10 +42,13 @@ async def seed_admins(session: AsyncSession) -> None:
 				can_read_system_users=bool(role_seed["can_read_system_users"]),
 				can_manage_roles=bool(role_seed["can_manage_roles"]),
 				can_read_system_permissions=bool(role_seed["can_read_system_permissions"]),
+				can_delete_posts=bool(role_seed["can_delete_posts"]),
 			)
 			session.add(role)
 			await session.flush()
 			created_roles += 1
+		elif not role.can_delete_posts:
+			role.can_delete_posts = bool(role_seed["can_delete_posts"])
 
 	print(f"Seeded admins reference data (roles created: {created_roles}).")
 

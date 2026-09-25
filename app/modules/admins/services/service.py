@@ -18,6 +18,7 @@ ROLE_PERMISSION_FIELDS = (
 	"can_read_system_users",
 	"can_manage_roles",
 	"can_read_system_permissions",
+	"can_delete_posts",
 )
 
 
@@ -366,6 +367,7 @@ class AdminService:
 			"can_read_system_users": role.can_read_system_users,
 			"can_manage_roles": role.can_manage_roles,
 			"can_read_system_permissions": role.can_read_system_permissions,
+			"can_delete_posts": role.can_delete_posts,
 		}
 
 	def _role_assignment_to_payload(self, user_role: Any, role: Any) -> dict[str, Any]:

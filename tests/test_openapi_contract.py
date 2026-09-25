@@ -27,9 +27,18 @@ def test_role_permission_api_contract_uses_fixed_flags() -> None:
 		"can_read_system_users",
 		"can_manage_roles",
 		"can_read_system_permissions",
+		"can_delete_posts",
 	}.issubset(role_schema["properties"])
+	assert "delete" in paths["/api/v1/posts/{post_id}"]
+	assert "delete" in paths["/api/v1/admin/posts/{post_id}"]
 
 	community_role_schema = schema["components"]["schemas"]["CommunityRoleResponse"]
 	community_permission_schema = schema["components"]["schemas"]["CommunityPermissionResponse"]
 	assert set(community_role_schema["properties"]) == {"id", "name", "permission_names"}
 	assert set(community_permission_schema["properties"]) == {"id", "name"}
+
+
+def test_authorization_uses_http_bearer_scheme() -> None:
+	schema = app.openapi()
+	security_schemes = schema["components"]["securitySchemes"]
+	assert list(security_schemes.values()) == [{"type": "http", "scheme": "bearer"}]

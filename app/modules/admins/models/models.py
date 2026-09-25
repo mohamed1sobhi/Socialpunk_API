@@ -36,6 +36,7 @@ class Role(AdminsBase):
 	can_read_system_users: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 	can_manage_roles: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 	can_read_system_permissions: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+	can_delete_posts: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 	user_roles: Mapped[list[UserRole]] = relationship(back_populates="role", cascade="all, delete-orphan")
 
@@ -50,6 +51,8 @@ class Role(AdminsBase):
 			permissions.append("admins.roles.manage")
 		if self.can_read_system_permissions:
 			permissions.append("admins.system_permissions.read")
+		if self.can_delete_posts:
+			permissions.append("content.posts.delete")
 		return permissions
 
 
