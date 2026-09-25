@@ -12,7 +12,7 @@ from app.modules.social_graph.schemas.api_schemas import (
 	PendingFriendRequestsResponse,
 	SendFriendRequestRequest,
 )
-from app.shared.auth.dependencies import get_current_user
+from app.shared.auth.dependencies import require_permission
 from app.shared.dependencies.social_graph_deps import get_social_graph_service
 
 
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/social", tags=["social_graph"])
 )
 async def send_friend_request(
 	payload: SendFriendRequestRequest,
-	current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_social_graph_service)],
 ) -> FriendRequestResponse:
 	friend_request = await service.send_request(
@@ -39,7 +39,7 @@ async def send_friend_request(
 @router.post("/friends/{request_id}/accept", response_model=FriendshipResponse)
 async def accept_friend_request(
 	request_id: UUID,
-	current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_social_graph_service)],
 ) -> FriendshipResponse:
 	friendship = await service.respond_to_request(
@@ -53,7 +53,7 @@ async def accept_friend_request(
 @router.post("/friends/{request_id}/reject", response_model=FriendRequestResponse)
 async def reject_friend_request(
 	request_id: UUID,
-	current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_social_graph_service)],
 ) -> FriendRequestResponse:
 	friend_request = await service.respond_to_request(
@@ -66,7 +66,7 @@ async def reject_friend_request(
 
 @router.get("/friends", response_model=FriendListResponse)
 async def list_friends(
-	current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_social_graph_service)],
 ) -> FriendListResponse:
 	friends = await service.get_friends(current_user["sub"])
@@ -75,7 +75,7 @@ async def list_friends(
 
 @router.get("/friends/requests/pending", response_model=PendingFriendRequestsResponse)
 async def list_pending_friend_requests(
-	current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_social_graph_service)],
 ) -> PendingFriendRequestsResponse:
 	pending_requests = await service.get_pending_requests(current_user["sub"])

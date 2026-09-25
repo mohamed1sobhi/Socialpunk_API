@@ -16,7 +16,7 @@ from app.modules.communities.schemas.api_schemas import (
 	CommunityRolesResponse,
 	CreateCommunityRequest,
 )
-from app.shared.auth.dependencies import get_current_user
+from app.shared.auth.dependencies import require_permission
 from app.shared.dependencies.communities_deps import get_community_service
 
 
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/communities", tags=["communities"])
 @router.post("", response_model=CommunityResponse, status_code=status.HTTP_201_CREATED)
 async def create_community(
 	payload: CreateCommunityRequest,
-	current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_community_service)],
 ) -> CommunityResponse:
 	community = await service.create_community(current_user["sub"], payload.model_dump())
@@ -43,7 +43,7 @@ async def list_public_communities(
 
 @router.get("/roles", response_model=CommunityRolesResponse)
 async def list_community_roles(
-	current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_community_service)],
 ) -> CommunityRolesResponse:
 	del current_user
@@ -53,7 +53,7 @@ async def list_community_roles(
 
 @router.get("/permissions", response_model=CommunityPermissionsResponse)
 async def list_community_permissions(
-	current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_community_service)],
 ) -> CommunityPermissionsResponse:
 	del current_user
@@ -64,7 +64,7 @@ async def list_community_permissions(
 @router.get("/{community_id}", response_model=CommunityResponse)
 async def get_community(
 	community_id: UUID,
-	current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_community_service)],
 ) -> CommunityResponse:
 	community = await service.get_community(community_id, current_user["sub"])
@@ -74,7 +74,7 @@ async def get_community(
 @router.post("/{community_id}/join", response_model=CommunityMemberResponse)
 async def join_community(
 	community_id: UUID,
-	current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_community_service)],
 ) -> CommunityMemberResponse:
 	member = await service.join_community(current_user["sub"], community_id)
@@ -84,7 +84,7 @@ async def join_community(
 @router.post("/{community_id}/leave", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 async def leave_community(
 	community_id: UUID,
-	current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_community_service)],
 ) -> Response:
 	await service.leave_community(current_user["sub"], community_id)
@@ -94,7 +94,7 @@ async def leave_community(
 @router.get("/{community_id}/members", response_model=CommunityMembersResponse)
 async def list_community_members(
 	community_id: UUID,
-	current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_community_service)],
 ) -> CommunityMembersResponse:
 	members = await service.list_members(current_user["sub"], community_id)
@@ -106,7 +106,7 @@ async def assign_community_role(
 	community_id: UUID,
 	role_id: UUID,
 	payload: AssignCommunityRoleRequest,
-	current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_community_service)],
 ) -> CommunityMemberResponse:
 	await service.get_member(current_user["sub"], community_id)
