@@ -82,6 +82,8 @@ class UserService:
 			raise UnauthorizedError("Invalid token payload")
 		if token_type != "refresh":
 			raise UnauthorizedError("Refresh token required")
+		if payload["aud"] != "user":
+			raise UnauthorizedError("Wrong token audience")
 
 		user = await self._repo.get_by_id(self._parse_user_id(subject))
 		if user is None or not getattr(user, "is_active", False):
@@ -172,8 +174,8 @@ class UserService:
 
 	def _token_pair(self, user_id: UUID) -> dict[str, str]:
 		return {
-			"access_token": create_access_token(user_id),
-			"refresh_token": create_refresh_token(user_id),
+			"access_token": create_access_token(user_id, audience="user", permissions=[]),
+			"refresh_token": create_refresh_token(user_id, audience="user"),
 			"token_type": "bearer",
 		}
 

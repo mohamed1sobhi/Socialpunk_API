@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Protocol
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from app.shared.events.bus import bus
 from app.shared.events.events import MemberJoinedEvent, MemberLeftEvent
@@ -11,6 +11,21 @@ from app.shared.exceptions.handlers import ConflictError, ForbiddenError, NotFou
 COMMUNITY_OWNER_ROLE_NAME = "owner"
 COMMUNITY_MEMBER_ROLE_NAME = "member"
 COMMUNITY_MEMBERS_MANAGE_PERMISSION = "communities.members.manage"
+COMMUNITY_ROLES_READ_PERMISSION = "communities.roles.read"
+COMMUNITY_PERMISSION_NAMES = (
+	COMMUNITY_MEMBERS_MANAGE_PERMISSION,
+	COMMUNITY_ROLES_READ_PERMISSION,
+)
+COMMUNITY_PERMISSION_DEFINITIONS = (
+	{
+		"id": uuid5(NAMESPACE_URL, f"socialpunk-api:{COMMUNITY_MEMBERS_MANAGE_PERMISSION}"),
+		"name": COMMUNITY_MEMBERS_MANAGE_PERMISSION,
+	},
+	{
+		"id": uuid5(NAMESPACE_URL, f"socialpunk-api:{COMMUNITY_ROLES_READ_PERMISSION}"),
+		"name": COMMUNITY_ROLES_READ_PERMISSION,
+	},
+)
 
 
 class CommunityRepositoryProtocol(Protocol):
@@ -24,7 +39,6 @@ class CommunityRepositoryProtocol(Protocol):
 	async def get_role_by_id(self, role_id: UUID) -> Any | None: ...
 	async def get_role_by_name(self, name: str) -> Any | None: ...
 	async def list_roles(self) -> list[Any]: ...
-	async def list_permissions(self) -> list[Any]: ...
 	async def get_permissions_for_role(self, role_id: UUID) -> list[str]: ...
 	async def update_member_role(
 		self,
@@ -118,8 +132,7 @@ class CommunityService:
 		return {"roles": role_payloads}
 
 	async def list_permissions(self) -> dict[str, Any]:
-		permissions = await self._repo.list_permissions()
-		return {"permissions": [self._permission_to_payload(permission) for permission in permissions]}
+		return {"permissions": [dict(permission) for permission in COMMUNITY_PERMISSION_DEFINITIONS]}
 
 	async def get_community(self, community_id: UUID | str, viewer_id: UUID | str) -> dict[str, Any]:
 		normalized_community_id = self._parse_uuid(community_id, label="community id")
@@ -200,6 +213,8 @@ class CommunityService:
 
 		if not normalized_permission:
 			raise ValidationError("Permission name must not be empty")
+		if normalized_permission not in COMMUNITY_PERMISSION_NAMES:
+			raise ValidationError("Unknown community permission")
 
 		community = await self._require_existing_community(normalized_community_id)
 		if community.owner_id == normalized_user_id:
@@ -358,12 +373,6 @@ class CommunityService:
 			"permission_names": permission_names,
 		}
 
-	def _permission_to_payload(self, permission: Any) -> dict[str, Any]:
-		return {
-			"id": permission.id,
-			"name": permission.name,
-		}
-
 	def _parse_uuid(self, value: UUID | str, *, label: str) -> UUID:
 		if isinstance(value, UUID):
 			return value
@@ -417,5 +426,8 @@ __all__ = [
 	"COMMUNITY_MEMBER_ROLE_NAME",
 	"COMMUNITY_MEMBERS_MANAGE_PERMISSION",
 	"COMMUNITY_OWNER_ROLE_NAME",
+	"COMMUNITY_PERMISSION_DEFINITIONS",
+	"COMMUNITY_PERMISSION_NAMES",
+	"COMMUNITY_ROLES_READ_PERMISSION",
 	"CommunityService",
 ]

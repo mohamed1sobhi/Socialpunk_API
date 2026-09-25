@@ -70,7 +70,7 @@ All wiring is performed by FastAPI `Depends()` chains defined **exclusively** in
 - Each module has exactly one corresponding `<module>_deps.py`.
 - These files import concrete classes from modules and chain `Depends()` providers.
 - A `_deps.py` may import another `_deps.py` to reuse an already-wired facade instance.
-- Only `api/router.py` files and `main.py` (lifespan startup only) may import from `shared/dependencies/`.
+- Only module `api/` route files and `main.py` (lifespan startup only) may import from `shared/dependencies/`.
 - `services/`, `clients/`, and `public/` must **never** import from `shared/dependencies/`.
 
 | File | Imports from |
@@ -115,13 +115,15 @@ From the frontend perspective, each module API owns a distinct responsibility bo
 
 - `users/api/` owns non-system user registration, login, refresh-token flows, and user CRUD/profile operations.
 - `admins/api/` owns system-user CRUD, system-user login, refresh-token flows, and all system role/permission assignment or revocation flows.
-- Non-system users authenticate through `users/api/`, and their access and refresh tokens omit `system_permissions`.
-- System users authenticate through `admins/api/`, and their access tokens carry `system_permissions` resolved from the admins module's role/permission model.
-- Both login surfaces must issue the same HTTP token-pair envelope so the shared auth dependencies continue to work unchanged.
+- Non-system users authenticate through `users/api/`; both tokens carry `aud="user"` and `permissions=[]`.
+- System users authenticate through `admins/api/`; both tokens carry `aud="system"`. Access tokens carry `permissions` resolved from the admins module's role/permission model; refresh tokens carry `permissions=[]`.
+- Both login surfaces issue the same HTTP token-pair envelope.
 - `communities/api/` owns community lifecycle and membership workflows. If it needs to validate a user ID or fetch user data, it does so through its injected `UsersClient` calling the `users/public/` facade.
-- Communities roles and permissions are global reference data. `communities/api/` may list them and assign seeded roles to members after tenant membership is validated, but it may not create or mutate the default catalog.
+- Community roles are global reference data seeded by `scripts/seed_communities.py`. Community permissions are fixed code-defined names represented by boolean columns on role rows. `communities/api/` may list the fixed catalog and assign seeded roles to members after tenant membership is validated, but it may not create or mutate the default catalog.
 - `content/api/` owns community-scoped posts. Every post requires a community, and post read access derives from that community's visibility and the requester's membership rather than a post-level visibility field.
-- Generic authenticated routes use `get_current_user` and then defer ownership, visibility, or membership checks to the owning domain service. Community-scoped content access is orchestrated by the content module using the communities module's access decisions, not by shared auth helpers.
+- Authenticated user-domain routes explicitly use `require_permission(audience="user")`; system routes use `require_permission(audience="system", permission=permission_name)`. Ownership, visibility, and membership checks remain with the owning domain service. Optional-auth content reads accept anonymous viewers or user tokens only. Community-scoped content access is orchestrated by the content module using the communities module's access decisions, not by shared auth helpers.
+- Content exposes separate user-audience owner deletion and system-audience permission-protected post deletion routes.
+- The `content.posts.delete` system permission is derived from the admins role's `can_delete_posts` flag. The system deletion endpoint is `DELETE /api/v1/admin/posts/{post_id}`; user deletion remains `DELETE /api/v1/posts/{post_id}`.
 
 ---
 
@@ -149,7 +151,7 @@ From the frontend perspective, each module API owns a distinct responsibility bo
 ✅ repositories/       →  own models/                      (only this layer)
 ✅ clients/            →  own `schemas/public_schemas/responses.py` (boundary validation only)
 ✅ public/             →  own `schemas/public_schemas/requests.py`  (boundary validation only)
-✅ api/                →  shared/auth/dependencies.py      (get_current_user, require_system_permission)
+✅ api/                →  shared/auth/dependencies.py      (get_current_user, require_permission)
 ✅ api/                →  shared/dependencies/<module>_deps.py
 ✅ main.py (lifespan)  →  shared/dependencies/<module>_deps.py  (startup wiring only)
 ✅ _deps.py            →  own module's concrete classes + other _deps.py files
@@ -165,46 +167,28 @@ From the frontend perspective, each module API owns a distinct responsibility bo
 - `AdminService` owns system-user CRUD, login, access-token issuance, refresh flows, and role/permission management for system users stored in `admins.users`.
 - `UserService` does **not** manage system users, system roles, or system permissions.
 - `AdminService` does **not** call the users module for system-user lifecycle or system-user login.
-- Both services must issue the same HTTP token-pair envelope so `get_current_user` and `require_system_permission(...)` continue to work unchanged.
+- Both services issue the same HTTP token-pair envelope while enforcing their own JWT audience on refresh.
 
 ### JWT Encoding Rules
 
 - `shared/auth/jwt.py` is pure functions only: zero DB calls, zero module imports.
-- Validate the input schema before encoding. No payload normalization is allowed except `UUID` → `str` conversion.
+- Validate with the same strict Pydantic audience-specific claim model before encoding and after decoding. No payload normalization is allowed except `UUID` → `str` conversion on issuance.
 - Keep token builders separate: `create_access_token(...)` and `create_refresh_token(...)`.
-- Every encoded token must include `iat`, `exp`, and `jti`.
-- Access tokens must include at least:
-      - `sub` — the user ID as a string
-      - `token_type="access"`
-- Access tokens may include `system_permissions: list[str]`; absence means the subject has no system permissions.
-- Refresh tokens must include at least:
-      - `sub`
-      - `token_type="refresh"`
-- Non-system user access and refresh tokens must omit `system_permissions`.
-- System users must receive `system_permissions` derived from the admins module's role/permission assignments.
-- Refresh tokens must omit `system_permissions` because permissions are resolved again when an access token is issued.
+- Every token includes exactly `aud`, `sub`, `permissions: list[str]`, `iat`, `exp`, `jti`, and `token_type` (`access` or `refresh`). Extra, missing, mistyped, and wrong-audience claims are rejected. No tenant claims exist.
+- `JWTClaims` has `aud="user"` and `permissions=[]` for both token types; `SystemJWTClaims` has `aud="system"`.
+- System access tokens contain role-derived `permissions`; refresh tokens contain `permissions=[]` and resolve permissions again on access-token issuance.
 
 ### JWT Decoding Rules
 
-- `decode_token()` verifies signature and expiration only.
-- `decode_token()` returns the decoded payload `dict`.
-- `decode_token()` must **not** enforce business rules such as token type, ownership, membership, or permissions.
+- `decode_token()` verifies signature and expiration, validates against the matching audience claim model, and returns the validated payload `dict`.
+- `decode_token()` does not enforce route authorization, ownership, membership, or permissions.
 
 ### Auth FastAPI Dependency Contract
 
 - `shared/auth/dependencies.py` has **zero imports from any module or `shared/dependencies/`**.
-- `get_current_user` is the generic authenticated-route dependency:
-      - extract the Bearer token with `OAuth2PasswordBearer`
-      - call `decode_token()`
-      - validate required claims: `sub`, `token_type`
-      - enforce `token_type == "access"`
-      - return the raw claims `dict`
-- `require_system_permission(codename)` is the system-route dependency:
-      - depend on `get_current_user`
-      - read `current_user.get("system_permissions", [])`
-      - raise `ForbiddenError` when the permission is absent
-- The shared dependency layer is population-agnostic: it validates token claims only and does not care whether `sub` belongs to `users.users` or `admins.users`.
-- Generic authenticated routes use `get_current_user` only. Ownership, membership, visibility, and similar business rules are then evaluated manually by the owning route/service pair.
+- `get_current_user` extracts the Bearer token with `HTTPBearer`, decodes and validates all claims, enforces `token_type == "access"`, and returns a plain claims `dict`.
+- The single guard `require_permission(*, audience, permission=None)` first rejects the wrong audience; when a permission is specified it raises `ForbiddenError` if missing. Use `require_permission(audience="user")` on user-domain routes and `require_permission(audience="system", permission=codename)` on system routes. It does not query the database.
+- Each protected route explicitly declares its audience. Ownership, membership, visibility, and similar business rules are evaluated by the owning route/service pair.
 - Shared auth helpers must not evaluate community-scoped content access, community membership, resource ownership, or any other domain rule.
 
 ### OAuth2 Login Input Contract
@@ -213,9 +197,9 @@ From the frontend perspective, each module API owns a distinct responsibility bo
 
 ### Request-Time Authorization Boundary
 
-- **No DB call is made at request time to resolve system permissions.** System-permission checks rely only on access-token claims.
+- **No DB call is made at request time to resolve system permissions.** System-permission checks rely only on system access-token claims.
 - Domain ownership and visibility checks are still allowed at request time, but they must happen inside the owning domain boundary. Until database RLS becomes authoritative, content services enforce post access using visibility and membership decisions supplied through the communities module's public boundary.
-- `sub` must be resolved inside the owning domain boundary. A system-user token does not imply a matching row in `users.users`, and a non-system-user token does not imply a matching row in `admins.users`.
+- `sub` is resolved inside the owning domain boundary. A system token cannot be used as a user token or vice versa, including at refresh endpoints.
 
 ---
 
@@ -301,7 +285,7 @@ async with AsyncSessionLocal() as session:
 | Database metadata | `shared/database/base.py` | One declarative base per PostgreSQL schema; exports `ALL_METADATA` for Alembic |
 | Database session | `shared/database/session.py` | Async engine only (`create_async_engine`); `get_db` yields `AsyncSession` with atomicity guard |
 | JWT + hashing | `shared/auth/jwt.py` | Pure functions only — zero DB access, zero module imports |
-| Auth dependencies | `shared/auth/dependencies.py` | Zero module imports; decodes tokens, validates required claims, and exposes `require_system_permission()` over `get_current_user()` for both non-system and system-user tokens |
+| Auth dependencies | `shared/auth/dependencies.py` | Zero module imports; enforces access-token type and explicit user/system audience and system permission guards |
 | WebSocket manager | `shared/websockets/manager.py` | Module-level singleton; injected into `NotificationService` via constructor DI |
 | Exception handlers | `shared/exceptions/handlers.py` | Covers `HTTPException`, `RequestValidationError`, unhandled 500 |
 | Composition roots | `shared/dependencies/<module>_deps.py` | One file per module; the only place cross-module wiring happens |
@@ -315,7 +299,7 @@ async with AsyncSessionLocal() as session:
 - Seed scripts own their own `AsyncSessionLocal` lifecycle, perform explicit commit/rollback, close the session in `finally`, and dispose the engine before exiting.
 - `main.py`, service constructors, and request handlers must never invoke seeding logic implicitly.
 - If a module requires initial data such as system roles/permissions, that requirement must be documented beside a corresponding seed script rather than implemented as hidden startup behavior.
-- Communities role and permission reference rows are seeded only by `scripts/seed_communities.py`; runtime code may list and assign them, but it must not create or mutate the default catalog.
+- Community role reference rows are seeded only by `scripts/seed_communities.py`. Community permissions are fixed code-defined values rather than database rows; runtime code may list the fixed definitions and assign seeded roles, but it must not create or mutate the default catalog.
 
 ---
 
