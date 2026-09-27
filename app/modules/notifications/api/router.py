@@ -66,15 +66,7 @@ async def notifications_websocket(
 		return
 
 	user_id = current_user["sub"]
-	await websocket.accept()
-	await manager.connect(user_id, websocket)
-	try:
-		while True:
-			await websocket.receive_text()
-	except WebSocketDisconnect:
-		pass
-	finally:
-		await manager.disconnect(user_id)
+	await manager.handle_connection(user_id, websocket)
 
 
 __all__ = ["router"]
