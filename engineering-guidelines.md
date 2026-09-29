@@ -286,9 +286,21 @@ async with AsyncSessionLocal() as session:
 | Database session | `shared/database/session.py` | Async engine only (`create_async_engine`); `get_db` yields `AsyncSession` with atomicity guard |
 | JWT + hashing | `shared/auth/jwt.py` | Pure functions only — zero DB access, zero module imports |
 | Auth dependencies | `shared/auth/dependencies.py` | Zero module imports; enforces access-token type and explicit user/system audience and system permission guards |
-| WebSocket manager | `shared/websockets/manager.py` | Module-level singleton; injected into `NotificationService` via constructor DI |
+| WebSocket manager | `shared/websockets/manager.py` | Process-local module singleton; injected into `NotificationService` via constructor DI; owns per-connection lifecycle and delivery |
 | Exception handlers | `shared/exceptions/handlers.py` | Covers `HTTPException`, `RequestValidationError`, unhandled 500 |
 | Composition roots | `shared/dependencies/<module>_deps.py` | One file per module; the only place cross-module wiring happens |
+
+### WebSocket Connection Lifecycle And Message Contract
+
+- The notifications WebSocket endpoint authenticates the connection as a user-audience access token before passing it to `InMemoryConnectionManager.handle_connection()`. Failed authentication closes the socket with `WS_1008_POLICY_VIOLATION`.
+- `handle_connection()` accepts and registers each socket independently. A user may have multiple active sockets; disconnecting one socket must not remove that user's other connections.
+- The manager owns each socket's receive loop, heartbeat task, and cleanup. Cleanup removes only that socket from the manager and cancels its heartbeat task; it must be safe when cleanup is triggered more than once.
+- The current process-local, in-memory manager is the MVP setup. It tracks connections by user and by socket, and uses an async lock for connection-map updates and a per-socket send lock to serialize outbound writes.
+- For a multi-worker deployment (for example, Gunicorn running multiple Uvicorn workers), each WebSocket remains local to the worker that accepted it. Redis or Kafka must route application messages between workers; neither broker stores or transfers WebSocket connections. The worker that owns a recipient's socket is responsible for sending to it.
+- Redis Pub/Sub is a lightweight, low-latency option for transient cross-worker message routing, but it does not persist messages or support replay. Kafka can be a better fit when durable delivery, buffering, replay, or independent consumers are required: retained events can be processed after a worker recovers. Kafka adds operational complexity and is not automatically preferable for transient WebSocket routing; the consumer/routing design must ensure events reach the worker that owns each target connection.
+- The server sends `{"type": "ping"}` every 30 seconds. Clients respond with `{"type": "pong"}`; each pong refreshes that socket's heartbeat timestamp. If no pong arrives within 90 seconds, the manager closes and removes the stale socket.
+- Incoming `{"type": "ack"}` messages are accepted as no-ops. Other message types, including messages without a supported `type`, receive `{"type": "error", "payload": {"message": "Unsupported message type"}}`.
+- `send_to_user()` sends a payload to every active socket for that user and returns `True` if at least one send succeeds. `broadcast()` sends to every active socket. A failed send closes and removes only the affected connection; unexpected receive or heartbeat errors close it with `WS_1011_INTERNAL_ERROR`.
 
 ---
 
