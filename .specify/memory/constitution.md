@@ -17,7 +17,7 @@ Sync Impact Report
   - ✅ .agents/skills/speckit-*/SKILL.md - no stale agent-specific references found
 - Follow-up TODOs: None
 -->
-# Vylo Social Media API Constitution
+# socialpunk Social Media API Constitution
 
 ## Core Principles
 

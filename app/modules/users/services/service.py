@@ -16,14 +16,14 @@ from app.shared.exceptions.handlers import ConflictError, NotFoundError, Unautho
 
 
 class UserRepositoryProtocol(Protocol):
-	async def get_by_id(self, user_id: UUID) -> Any | None: ...
-	async def get_by_email(self, email: str) -> Any | None: ...
-	async def get_by_username(self, username: str) -> Any | None: ...
-	async def create(self, data: dict[str, Any]) -> Any: ...
-	async def update_user(self, user_id: UUID, data: dict[str, Any]) -> Any | None: ...
-	async def deactivate_user(self, user_id: UUID) -> Any | None: ...
-	async def get_profile(self, user_id: UUID) -> Any | None: ...
-	async def upsert_profile(self, user_id: UUID, data: dict[str, Any]) -> Any: ...
+	async def get_by_id(self, user_id: UUID) -> dict[str, Any] | None: ...
+	async def get_by_email(self, email: str) -> dict[str, Any] | None: ...
+	async def get_by_username(self, username: str) -> dict[str, Any] | None: ...
+	async def create(self, data: dict[str, Any]) -> dict[str, Any]: ...
+	async def update_user(self, user_id: UUID, data: dict[str, Any]) -> dict[str, Any] | None: ...
+	async def deactivate_user(self, user_id: UUID) -> dict[str, Any] | None: ...
+	async def get_profile(self, user_id: UUID) -> dict[str, Any] | None: ...
+	async def upsert_profile(self, user_id: UUID, data: dict[str, Any]) -> dict[str, Any]: ...
 
 
 class UserService:
@@ -60,18 +60,18 @@ class UserService:
 			},
 		)
 
-		await bus.publish(UserRegisteredEvent(user_id=str(user.id), username=user.username))
+		await bus.publish(UserRegisteredEvent(user_id=str(user["id"]), username=user["username"]))
 		return self._user_to_payload(user)
 
 	async def login(self, *, email: str, password: str) -> dict[str, str]:
 		normalized_email = self._normalize_email(email)
 		user = await self._repo.get_by_email(normalized_email)
-		if user is None or not getattr(user, "is_active", False):
+		if user is None or not user["is_active"]:
 			raise UnauthorizedError("Invalid email or password")
-		if not verify_password(password, getattr(user, "hashed_password", "")):
+		if not verify_password(password, user["hashed_password"]):
 			raise UnauthorizedError("Invalid email or password")
 
-		return self._token_pair(user.id)
+		return self._token_pair(user["id"])
 
 	async def refresh_tokens(self, *, refresh_token: str) -> dict[str, str]:
 		payload = decode_token(refresh_token)
@@ -86,10 +86,10 @@ class UserService:
 			raise UnauthorizedError("Wrong token audience")
 
 		user = await self._repo.get_by_id(self._parse_user_id(subject))
-		if user is None or not getattr(user, "is_active", False):
+		if user is None or not user["is_active"]:
 			raise UnauthorizedError("User is not available")
 
-		return self._token_pair(user.id)
+		return self._token_pair(user["id"])
 
 	async def get_user(self, user_id: UUID | str) -> dict[str, Any]:
 		user = await self._repo.get_by_id(self._parse_user_id(user_id))
@@ -118,7 +118,7 @@ class UserService:
 
 			normalized_username = self._normalize_username(username)
 			existing_user = await self._repo.get_by_username(normalized_username)
-			if existing_user is not None and existing_user.id != current_user.id:
+			if existing_user is not None and existing_user["id"] != current_user["id"]:
 				raise ConflictError("Username is already in use")
 			updates["username"] = normalized_username
 
@@ -129,7 +129,7 @@ class UserService:
 
 			normalized_email = self._normalize_email(email)
 			existing_user = await self._repo.get_by_email(normalized_email)
-			if existing_user is not None and existing_user.id != current_user.id:
+			if existing_user is not None and existing_user["id"] != current_user["id"]:
 				raise ConflictError("Email is already in use")
 			updates["email"] = normalized_email
 
@@ -166,7 +166,7 @@ class UserService:
 		if deactivated_user is None:
 			raise NotFoundError("User not found")
 
-	async def _require_existing_user(self, user_id: UUID) -> Any:
+	async def _require_existing_user(self, user_id: UUID) -> dict[str, Any]:
 		user = await self._repo.get_by_id(user_id)
 		if user is None:
 			raise NotFoundError("User not found")
@@ -211,23 +211,16 @@ class UserService:
 		normalized_value = value.strip()
 		return normalized_value or None
 
-	def _user_to_payload(self, user: Any) -> dict[str, Any]:
+	def _user_to_payload(self, user: dict[str, Any]) -> dict[str, Any]:
 		return {
-			"id": user.id,
-			"username": user.username,
-			"email": user.email,
-			"is_active": user.is_active,
-			"created_at": user.created_at,
+			field: user[field] for field in ("id", "username", "email", "is_active", "created_at")
 		}
 
-	def _profile_to_payload(self, profile: Any) -> dict[str, Any]:
+	def _profile_to_payload(self, profile: dict[str, Any]) -> dict[str, Any]:
 		return {
-			"id": profile.id,
-			"user_id": profile.user_id,
-			"display_name": profile.display_name,
-			"bio": profile.bio,
-			"avatar_url": profile.avatar_url,
-			"updated_at": profile.updated_at,
+			field: profile[field] for field in (
+				"id", "user_id", "display_name", "bio", "avatar_url", "updated_at",
+			)
 		}
 
 

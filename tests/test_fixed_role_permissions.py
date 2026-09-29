@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any, cast
 from uuid import uuid4
 
@@ -65,18 +64,18 @@ def test_role_request_supports_fixed_permission_flags() -> None:
 
 class FakeAdminRoleRepository:
 	def __init__(self) -> None:
-		self.roles: dict[str, SimpleNamespace] = {}
+		self.roles: dict[str, dict[str, Any]] = {}
 
-	async def get_role_by_name(self, name: str) -> SimpleNamespace | None:
+	async def get_role_by_name(self, name: str) -> dict[str, Any] | None:
 		return self.roles.get(name)
 
-	async def get_role_by_id(self, role_id: Any) -> SimpleNamespace | None:
-		return next((role for role in self.roles.values() if role.id == role_id), None)
+	async def get_role_by_id(self, role_id: Any) -> dict[str, Any] | None:
+		return next((role for role in self.roles.values() if role["id"] == role_id), None)
 
-	async def list_roles(self) -> list[SimpleNamespace]:
+	async def list_roles(self) -> list[dict[str, Any]]:
 		return list(self.roles.values())
 
-	async def create_role(self, data: dict[str, Any]) -> SimpleNamespace:
+	async def create_role(self, data: dict[str, Any]) -> dict[str, Any]:
 		for field_name in (
 			"can_manage_system_users",
 			"can_read_system_users",
@@ -85,16 +84,15 @@ class FakeAdminRoleRepository:
 			"can_delete_posts",
 		):
 			data.setdefault(field_name, False)
-		role = SimpleNamespace(**data)
-		self.roles[role.name] = role
+		role = dict(data)
+		self.roles[role["name"]] = role
 		return role
 
-	async def update_role(self, role_id: Any, data: dict[str, Any]) -> SimpleNamespace | None:
+	async def update_role(self, role_id: Any, data: dict[str, Any]) -> dict[str, Any] | None:
 		role = await self.get_role_by_id(role_id)
 		if role is None:
 			return None
-		for field_name, value in data.items():
-			setattr(role, field_name, value)
+		role.update(data)
 		return role
 
 

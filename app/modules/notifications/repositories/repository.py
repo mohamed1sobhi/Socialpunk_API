@@ -13,7 +13,16 @@ class NotificationRepository:
 	def __init__(self, session: AsyncSession) -> None:
 		self._session = session
 
-	async def create(self, recipient_id: UUID, type: str, payload: dict[str, Any]) -> Notification:
+	@staticmethod
+	def _payload(notification: Notification) -> dict[str, Any]:
+		return {
+			**{field: getattr(notification, field) for field in (
+				"id", "recipient_id", "type", "is_read", "created_at",
+			)},
+			"payload": dict(notification.payload),
+		}
+
+	async def create(self, recipient_id: UUID, type: str, payload: dict[str, Any]) -> dict[str, Any]:
 		notification = Notification(
 			id=uuid4(),
 			recipient_id=recipient_id,
@@ -23,9 +32,9 @@ class NotificationRepository:
 		)
 		self._session.add(notification)
 		await self._session.flush()
-		return notification
+		return self._payload(notification)
 
-	async def get_for_user(self, user_id: UUID, limit: int, offset: int) -> list[Notification]:
+	async def get_for_user(self, user_id: UUID, limit: int, offset: int) -> list[dict[str, Any]]:
 		statement = (
 			select(Notification)
 			.where(Notification.recipient_id == user_id)
@@ -33,9 +42,9 @@ class NotificationRepository:
 			.limit(limit)
 			.offset(offset)
 		)
-		return list((await self._session.scalars(statement)).all())
+		return [self._payload(row) for row in (await self._session.scalars(statement)).all()]
 
-	async def mark_read(self, notification_id: UUID, user_id: UUID) -> Notification | None:
+	async def mark_read(self, notification_id: UUID, user_id: UUID) -> dict[str, Any] | None:
 		statement = select(Notification).where(
 			Notification.id == notification_id,
 			Notification.recipient_id == user_id,
@@ -46,7 +55,7 @@ class NotificationRepository:
 
 		notification.is_read = True
 		await self._session.flush()
-		return notification
+		return self._payload(notification)
 
 	async def mark_all_read(self, user_id: UUID) -> None:
 		statement = (
