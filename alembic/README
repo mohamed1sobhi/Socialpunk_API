@@ -1,4 +1,4 @@
-Vylo multi-schema migration environment.
+socialpunk multi-schema migration environment.
 
 All schema-only revisions live directly in `alembic/versions/`. Alembic loads
 the synchronous `MIGRATION_DATABASE_URL` through application settings, imports

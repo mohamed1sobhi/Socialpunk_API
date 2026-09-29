@@ -1,4 +1,4 @@
-# Engineering Guidelines — Vylo Social Media API
+# Engineering Guidelines — socialpunk Social Media API
 
 This document is the authoritative reference for architecture rules, coding constraints, and design contracts for this project. Every coding session must follow these rules without exception.
 
