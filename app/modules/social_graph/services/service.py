@@ -9,21 +9,21 @@ from app.shared.exceptions.handlers import ConflictError, ForbiddenError, NotFou
 
 
 class SocialGraphRepositoryProtocol(Protocol):
-	async def get_friendship(self, user_a: UUID, user_b: UUID) -> Any | None: ...
-	async def get_request_by_id(self, request_id: UUID) -> Any | None: ...
-	async def get_pending_request_for_pair(self, user_a: UUID, user_b: UUID) -> Any | None: ...
+	async def get_friendship(self, user_a: UUID, user_b: UUID) -> dict[str, Any] | None: ...
+	async def get_request_by_id(self, request_id: UUID) -> dict[str, Any] | None: ...
+	async def get_pending_request_for_pair(self, user_a: UUID, user_b: UUID) -> dict[str, Any] | None: ...
 	async def create_request(
 		self,
 		*,
 		request_id: UUID,
 		requester_id: UUID,
 		receiver_id: UUID,
-	) -> Any: ...
-	async def reject_request(self, request_id: UUID) -> Any | None: ...
-	async def create_friendship(self, user_a: UUID, user_b: UUID) -> Any: ...
+	) -> dict[str, Any]: ...
+	async def reject_request(self, request_id: UUID) -> dict[str, Any] | None: ...
+	async def create_friendship(self, user_a: UUID, user_b: UUID) -> dict[str, Any]: ...
 	async def delete_request(self, request_id: UUID) -> None: ...
 	async def get_friends(self, user_id: UUID) -> list[UUID]: ...
-	async def get_pending_requests(self, user_id: UUID) -> list[Any]: ...
+	async def get_pending_requests(self, user_id: UUID) -> list[dict[str, Any]]: ...
 
 
 class UsersClientProtocol(Protocol):
@@ -59,8 +59,8 @@ class SocialGraphService:
 
 		await bus.publish(
 			FriendRequestSentEvent(
-				requester_id=str(friend_request.requester_id),
-				receiver_id=str(friend_request.receiver_id),
+				requester_id=str(friend_request["requester_id"]),
+				receiver_id=str(friend_request["receiver_id"]),
 			)
 		)
 		return self._friend_request_to_payload(friend_request)
@@ -81,33 +81,33 @@ class SocialGraphService:
 		if friend_request is None:
 			raise NotFoundError("Friend request not found")
 
-		if self._coerce_status(friend_request.status) != "pending":
+		if friend_request["status"] != "pending":
 			raise ValidationError("Friend request is no longer pending")
 
-		if friend_request.receiver_id != normalized_responder_id:
+		if friend_request["receiver_id"] != normalized_responder_id:
 			raise ForbiddenError("Only the recipient can respond to this friend request")
 
 		if accept:
-			await self._require_active_user(friend_request.requester_id)
+			await self._require_active_user(friend_request["requester_id"])
 
-			if await self._repo.get_friendship(friend_request.requester_id, friend_request.receiver_id):
+			if await self._repo.get_friendship(friend_request["requester_id"], friend_request["receiver_id"]):
 				raise ConflictError("Users are already friends")
 
 			friendship = await self._repo.create_friendship(
-				friend_request.requester_id,
-				friend_request.receiver_id,
+				friend_request["requester_id"],
+				friend_request["receiver_id"],
 			)
-			await self._repo.delete_request(friend_request.id)
+			await self._repo.delete_request(friend_request["id"])
 
 			await bus.publish(
 				FriendshipFormedEvent(
-					user_low=str(friendship.user_low),
-					user_high=str(friendship.user_high),
+					user_low=str(friendship["user_low"]),
+					user_high=str(friendship["user_high"]),
 				)
 			)
 			return self._friendship_to_payload(friendship)
 
-		rejected_request = await self._repo.reject_request(friend_request.id)
+		rejected_request = await self._repo.reject_request(friend_request["id"])
 		if rejected_request is None:
 			raise NotFoundError("Friend request not found")
 		return self._friend_request_to_payload(rejected_request)
@@ -138,32 +138,11 @@ class SocialGraphService:
 			raise ValidationError("User is not active")
 		return user
 
-	def _friend_request_to_payload(self, friend_request: Any) -> dict[str, Any]:
-		return {
-			"id": friend_request.id,
-			"requester_id": friend_request.requester_id,
-			"receiver_id": friend_request.receiver_id,
-			"status": self._coerce_status(friend_request.status),
-			"created_at": friend_request.created_at,
-			"updated_at": friend_request.updated_at,
-		}
+	def _friend_request_to_payload(self, friend_request: dict[str, Any]) -> dict[str, Any]:
+		return dict(friend_request)
 
-	def _friendship_to_payload(self, friendship: Any) -> dict[str, Any]:
-		return {
-			"user_low": friendship.user_low,
-			"user_high": friendship.user_high,
-			"created_at": friendship.created_at,
-		}
-
-	def _coerce_status(self, status: Any) -> str:
-		if isinstance(status, str):
-			return status
-
-		value = getattr(status, "value", None)
-		if isinstance(value, str):
-			return value
-
-		raise ValidationError("Invalid friend request status")
+	def _friendship_to_payload(self, friendship: dict[str, Any]) -> dict[str, Any]:
+		return dict(friendship)
 
 	def _parse_uuid(self, value: UUID | str, *, label: str) -> UUID:
 		if isinstance(value, UUID):

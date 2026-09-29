@@ -12,11 +12,11 @@ CONTENT_POSTS_DELETE_PERMISSION = "content.posts.delete"
 
 
 class ContentRepositoryProtocol(Protocol):
-	async def create(self, data: dict[str, Any]) -> Any: ...
-	async def get_by_id(self, post_id: UUID) -> Any | None: ...
-	async def get_feed(self, community_ids: list[UUID], limit: int, offset: int) -> list[Any]: ...
-	async def get_user_posts(self, author_id: UUID, community_ids: list[UUID]) -> list[Any]: ...
-	async def get_community_posts(self, community_id: UUID, limit: int, offset: int) -> list[Any]: ...
+	async def create(self, data: dict[str, Any]) -> dict[str, Any]: ...
+	async def get_by_id(self, post_id: UUID) -> dict[str, Any] | None: ...
+	async def get_feed(self, community_ids: list[UUID], limit: int, offset: int) -> list[dict[str, Any]]: ...
+	async def get_user_posts(self, author_id: UUID, community_ids: list[UUID]) -> list[dict[str, Any]]: ...
+	async def get_community_posts(self, community_id: UUID, limit: int, offset: int) -> list[dict[str, Any]]: ...
 	async def soft_delete(self, post_id: UUID) -> bool: ...
 
 
@@ -55,9 +55,9 @@ class ContentService:
 
 		await bus.publish(
 			PostCreatedEvent(
-				post_id=str(post.id),
-				author_id=str(post.author_id),
-				community_id=str(post.community_id),
+				post_id=str(post["id"]),
+				author_id=str(post["author_id"]),
+				community_id=str(post["community_id"]),
 			)
 		)
 		return self._post_to_payload(post)
@@ -67,7 +67,7 @@ class ContentService:
 		normalized_viewer_id = self._parse_optional_uuid(viewer_id, label="viewer id")
 
 		post = await self._require_existing_post(normalized_post_id)
-		await self._require_community_access(post.community_id, normalized_viewer_id)
+		await self._require_community_access(post["community_id"], normalized_viewer_id)
 		return self._post_to_payload(post)
 
 	async def list_feed(
@@ -130,14 +130,14 @@ class ContentService:
 		normalized_requester_id = self._parse_uuid(requester_id, label="requester id")
 
 		post = await self._require_existing_post(normalized_post_id)
-		if post.author_id != normalized_requester_id and not can_delete_any:
+		if post["author_id"] != normalized_requester_id and not can_delete_any:
 			raise ForbiddenError("Only the author can delete this post")
 
 		deleted = await self._repo.soft_delete(normalized_post_id)
 		if not deleted:
 			raise NotFoundError("Post not found")
 
-	async def _require_existing_post(self, post_id: UUID) -> Any:
+	async def _require_existing_post(self, post_id: UUID) -> dict[str, Any]:
 		post = await self._repo.get_by_id(post_id)
 		if post is None:
 			raise NotFoundError("Post not found")
@@ -157,17 +157,8 @@ class ContentService:
 		if not membership.get("is_member", False):
 			raise ForbiddenError("Community membership is required")
 
-	def _post_to_payload(self, post: Any) -> dict[str, Any]:
-		return {
-			"id": post.id,
-			"author_id": post.author_id,
-			"community_id": post.community_id,
-			"title": post.title,
-			"body": post.body,
-			"created_at": post.created_at,
-			"updated_at": post.updated_at,
-			"is_deleted": post.is_deleted,
-		}
+	def _post_to_payload(self, post: dict[str, Any]) -> dict[str, Any]:
+		return dict(post)
 
 	def _parse_uuid(self, value: UUID | str, *, label: str) -> UUID:
 		if isinstance(value, UUID):

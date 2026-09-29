@@ -14,16 +14,16 @@ from app.shared.exceptions.handlers import NotFoundError, ValidationError
 
 
 class NotificationRepositoryProtocol(Protocol):
-	async def create(self, recipient_id: UUID, type: str, payload: dict[str, Any]) -> Any: ...
-	async def get_for_user(self, user_id: UUID, limit: int, offset: int) -> list[Any]: ...
-	async def mark_read(self, notification_id: UUID, user_id: UUID) -> Any | None: ...
+	async def create(self, recipient_id: UUID, type: str, payload: dict[str, Any]) -> dict[str, Any]: ...
+	async def get_for_user(self, user_id: UUID, limit: int, offset: int) -> list[dict[str, Any]]: ...
+	async def mark_read(self, notification_id: UUID, user_id: UUID) -> dict[str, Any] | None: ...
 	async def mark_all_read(self, user_id: UUID) -> None: ...
 	async def commit(self) -> None: ...
 	async def rollback(self) -> None: ...
 
 
 class WebSocketManagerProtocol(Protocol):
-	async def send_to_user(self, user_id: str, payload: Any) -> bool: ...
+	async def send_to_user(self, user_id: UUID, payload: dict[str, Any]) -> bool: ...
 
 
 class EmailClientProtocol(Protocol):
@@ -225,7 +225,7 @@ class NotificationService:
 			await self._repo.rollback()
 			raise
 
-		await self._ws_manager.send_to_user(str(recipient_id), notification_payload)
+		await self._ws_manager.send_to_user(recipient_id, notification_payload)
 		if email or sms:
 			await self._deliver_out_of_band(recipient_id, notification_type, payload, email=email, sms=sms)
 		return notification_payload
@@ -251,15 +251,8 @@ class NotificationService:
 		if sms:
 			await self._sms_client.send_sms(to_phone=contact.get("phone_number"), body=body)
 
-	def _notification_to_payload(self, notification: Any) -> dict[str, Any]:
-		return {
-			"id": notification.id,
-			"recipient_id": notification.recipient_id,
-			"type": notification.type,
-			"payload": notification.payload,
-			"is_read": notification.is_read,
-			"created_at": notification.created_at,
-		}
+	def _notification_to_payload(self, notification: dict[str, Any]) -> dict[str, Any]:
+		return dict(notification)
 
 	def _notification_subject(self, notification_type: str) -> str:
 		subjects = {

@@ -29,16 +29,16 @@ COMMUNITY_PERMISSION_DEFINITIONS = (
 
 
 class CommunityRepositoryProtocol(Protocol):
-	async def get_by_id(self, community_id: UUID) -> Any | None: ...
-	async def list_public(self) -> list[Any]: ...
+	async def get_by_id(self, community_id: UUID) -> dict[str, Any] | None: ...
+	async def list_public(self) -> list[dict[str, Any]]: ...
 	async def list_accessible_ids(self, viewer_id: UUID | None) -> list[UUID]: ...
-	async def create_community(self, data: dict[str, Any]) -> Any: ...
-	async def add_member(self, data: dict[str, Any]) -> Any: ...
+	async def create_community(self, data: dict[str, Any]) -> dict[str, Any]: ...
+	async def add_member(self, data: dict[str, Any]) -> dict[str, Any]: ...
 	async def remove_member(self, user_id: UUID, community_id: UUID) -> bool: ...
-	async def get_member(self, user_id: UUID, community_id: UUID) -> Any | None: ...
-	async def get_role_by_id(self, role_id: UUID) -> Any | None: ...
-	async def get_role_by_name(self, name: str) -> Any | None: ...
-	async def list_roles(self) -> list[Any]: ...
+	async def get_member(self, user_id: UUID, community_id: UUID) -> dict[str, Any] | None: ...
+	async def get_role_by_id(self, role_id: UUID) -> dict[str, Any] | None: ...
+	async def get_role_by_name(self, name: str) -> dict[str, Any] | None: ...
+	async def list_roles(self) -> list[dict[str, Any]]: ...
 	async def get_permissions_for_role(self, role_id: UUID) -> list[str]: ...
 	async def update_member_role(
 		self,
@@ -46,10 +46,10 @@ class CommunityRepositoryProtocol(Protocol):
 		user_id: UUID,
 		community_id: UUID,
 		role_id: UUID,
-	) -> Any | None: ...
+	) -> dict[str, Any] | None: ...
 	async def get_member_permissions(self, user_id: UUID, community_id: UUID) -> list[str]: ...
-	async def get_communities_for_user(self, user_id: UUID) -> list[Any]: ...
-	async def list_members(self, community_id: UUID) -> list[Any]: ...
+	async def get_communities_for_user(self, user_id: UUID) -> list[dict[str, Any]]: ...
+	async def list_members(self, community_id: UUID) -> list[dict[str, Any]]: ...
 	async def list_member_ids(self, community_id: UUID) -> list[UUID]: ...
 
 
@@ -84,8 +84,8 @@ class CommunityService:
 			{
 				"id": uuid4(),
 				"user_id": normalized_owner_id,
-				"community_id": community.id,
-				"role_id": owner_role.id,
+				"community_id": community["id"],
+				"role_id": owner_role["id"],
 			}
 		)
 
@@ -108,9 +108,9 @@ class CommunityService:
 		if normalized_viewer_id is not None:
 			is_member = await self._repo.get_member(normalized_viewer_id, normalized_community_id) is not None
 
-		can_view = self._coerce_visibility(community.visibility) == "public"
+		can_view = community["visibility"] == "public"
 		if normalized_viewer_id is not None:
-			can_view = can_view or community.owner_id == normalized_viewer_id or is_member
+			can_view = can_view or community["owner_id"] == normalized_viewer_id or is_member
 
 		return {
 			"community_id": normalized_community_id,
@@ -127,7 +127,7 @@ class CommunityService:
 		roles = await self._repo.list_roles()
 		role_payloads: list[dict[str, Any]] = []
 		for role in roles:
-			permission_names = await self._repo.get_permissions_for_role(role.id)
+			permission_names = await self._repo.get_permissions_for_role(role["id"])
 			role_payloads.append(self._role_to_payload(role, permission_names))
 		return {"roles": role_payloads}
 
@@ -152,7 +152,7 @@ class CommunityService:
 		if await self._repo.get_member(normalized_user_id, normalized_community_id):
 			raise ConflictError("User is already a member of this community")
 
-		if self._coerce_visibility(community.visibility) == "private":
+		if community["visibility"] == "private":
 			raise ForbiddenError("Private communities require an invitation or approval flow")
 
 		member_role = await self._repo.get_role_by_name(COMMUNITY_MEMBER_ROLE_NAME)
@@ -164,7 +164,7 @@ class CommunityService:
 				"id": uuid4(),
 				"user_id": normalized_user_id,
 				"community_id": normalized_community_id,
-				"role_id": member_role.id,
+				"role_id": member_role["id"],
 			}
 		)
 
@@ -187,7 +187,7 @@ class CommunityService:
 		if member is None:
 			raise NotFoundError("Community membership not found")
 
-		if community.owner_id == normalized_user_id:
+		if community["owner_id"] == normalized_user_id:
 			raise ForbiddenError("Community owners cannot leave without transferring ownership first")
 
 		removed = await self._repo.remove_member(normalized_user_id, normalized_community_id)
@@ -217,7 +217,7 @@ class CommunityService:
 			raise ValidationError("Unknown community permission")
 
 		community = await self._require_existing_community(normalized_community_id)
-		if community.owner_id == normalized_user_id:
+		if community["owner_id"] == normalized_user_id:
 			return
 
 		member = await self._repo.get_member(normalized_user_id, normalized_community_id)
@@ -262,10 +262,10 @@ class CommunityService:
 		if role is None:
 			raise NotFoundError("Community role not found")
 
-		if community.owner_id == normalized_member_user_id and role.name != COMMUNITY_OWNER_ROLE_NAME:
+		if community["owner_id"] == normalized_member_user_id and role["name"] != COMMUNITY_OWNER_ROLE_NAME:
 			raise ForbiddenError("The community owner role cannot be changed")
 
-		if community.owner_id != normalized_member_user_id and role.name == COMMUNITY_OWNER_ROLE_NAME:
+		if community["owner_id"] != normalized_member_user_id and role["name"] == COMMUNITY_OWNER_ROLE_NAME:
 			raise ValidationError("The owner role is reserved for the community owner")
 
 		updated_member = await self._repo.update_member_role(
@@ -304,7 +304,7 @@ class CommunityService:
 		community = await self._require_existing_community(normalized_community_id)
 		return {
 			"community_id": normalized_community_id,
-			"owner_id": community.owner_id,
+			"owner_id": community["owner_id"],
 		}
 
 	async def list_member_ids(self, community_id: UUID | str) -> dict[str, Any]:
@@ -330,46 +330,32 @@ class CommunityService:
 			raise ValidationError("User is not active")
 		return user
 
-	async def _require_existing_community(self, community_id: UUID) -> Any:
+	async def _require_existing_community(self, community_id: UUID) -> dict[str, Any]:
 		community = await self._repo.get_by_id(community_id)
 		if community is None:
 			raise NotFoundError("Community not found")
 		return community
 
-	async def _enforce_visibility(self, community: Any, viewer_id: UUID) -> None:
-		if self._coerce_visibility(community.visibility) != "private":
+	async def _enforce_visibility(self, community: dict[str, Any], viewer_id: UUID) -> None:
+		if community["visibility"] != "private":
 			return
 
-		if community.owner_id == viewer_id:
+		if community["owner_id"] == viewer_id:
 			return
 
-		member = await self._repo.get_member(viewer_id, community.id)
+		member = await self._repo.get_member(viewer_id, community["id"])
 		if member is None:
 			raise ForbiddenError("Private community membership is required")
 
-	def _community_to_payload(self, community: Any) -> dict[str, Any]:
-		return {
-			"id": community.id,
-			"name": community.name,
-			"description": community.description,
-			"visibility": self._coerce_visibility(community.visibility),
-			"owner_id": community.owner_id,
-			"created_at": community.created_at,
-		}
+	def _community_to_payload(self, community: dict[str, Any]) -> dict[str, Any]:
+		return dict(community)
 
-	def _member_to_payload(self, member: Any) -> dict[str, Any]:
-		return {
-			"id": member.id,
-			"user_id": member.user_id,
-			"community_id": member.community_id,
-			"role_id": member.role_id,
-			"joined_at": member.joined_at,
-		}
+	def _member_to_payload(self, member: dict[str, Any]) -> dict[str, Any]:
+		return dict(member)
 
-	def _role_to_payload(self, role: Any, permission_names: list[str]) -> dict[str, Any]:
+	def _role_to_payload(self, role: dict[str, Any], permission_names: list[str]) -> dict[str, Any]:
 		return {
-			"id": role.id,
-			"name": role.name,
+			**role,
 			"permission_names": permission_names,
 		}
 
@@ -406,21 +392,9 @@ class CommunityService:
 		return normalized_value or None
 
 	def _normalize_visibility(self, value: Any) -> str:
-		visibility = self._coerce_visibility(value)
-		if visibility not in {"public", "private"}:
+		if not isinstance(value, str) or value not in {"public", "private"}:
 			raise ValidationError("Visibility must be either 'public' or 'private'")
-		return visibility
-
-	def _coerce_visibility(self, value: Any) -> str:
-		if isinstance(value, str):
-			return value
-
-		coerced_value = getattr(value, "value", None)
-		if isinstance(coerced_value, str):
-			return coerced_value
-
-		raise ValidationError("Invalid community visibility")
-
+		return value
 
 __all__ = [
 	"COMMUNITY_MEMBER_ROLE_NAME",

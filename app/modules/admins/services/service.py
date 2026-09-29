@@ -23,21 +23,21 @@ ROLE_PERMISSION_FIELDS = (
 
 
 class AdminRepositoryProtocol(Protocol):
-	async def get_user_by_id(self, user_id: UUID) -> Any | None: ...
-	async def get_user_by_email(self, email: str) -> Any | None: ...
-	async def get_user_by_username(self, username: str) -> Any | None: ...
-	async def create_user(self, data: dict[str, Any]) -> Any: ...
-	async def update_user(self, user_id: UUID, data: dict[str, Any]) -> Any | None: ...
-	async def deactivate_user(self, user_id: UUID) -> Any | None: ...
-	async def get_role_by_id(self, role_id: UUID) -> Any | None: ...
-	async def get_role_by_name(self, name: str) -> Any | None: ...
-	async def list_roles(self) -> list[Any]: ...
-	async def create_role(self, data: dict[str, Any]) -> Any: ...
-	async def update_role(self, role_id: UUID, data: dict[str, Any]) -> Any | None: ...
-	async def get_user_role(self, user_id: UUID, role_id: UUID) -> Any | None: ...
-	async def assign_role_to_user(self, user_id: UUID, role_id: UUID) -> Any: ...
+	async def get_user_by_id(self, user_id: UUID) -> dict[str, Any] | None: ...
+	async def get_user_by_email(self, email: str) -> dict[str, Any] | None: ...
+	async def get_user_by_username(self, username: str) -> dict[str, Any] | None: ...
+	async def create_user(self, data: dict[str, Any]) -> dict[str, Any]: ...
+	async def update_user(self, user_id: UUID, data: dict[str, Any]) -> dict[str, Any] | None: ...
+	async def deactivate_user(self, user_id: UUID) -> dict[str, Any] | None: ...
+	async def get_role_by_id(self, role_id: UUID) -> dict[str, Any] | None: ...
+	async def get_role_by_name(self, name: str) -> dict[str, Any] | None: ...
+	async def list_roles(self) -> list[dict[str, Any]]: ...
+	async def create_role(self, data: dict[str, Any]) -> dict[str, Any]: ...
+	async def update_role(self, role_id: UUID, data: dict[str, Any]) -> dict[str, Any] | None: ...
+	async def get_user_role(self, user_id: UUID, role_id: UUID) -> dict[str, Any] | None: ...
+	async def assign_role_to_user(self, user_id: UUID, role_id: UUID) -> dict[str, Any]: ...
 	async def revoke_role_from_user(self, user_id: UUID, role_id: UUID) -> bool: ...
-	async def get_user_roles(self, user_id: UUID) -> list[Any]: ...
+	async def get_user_roles(self, user_id: UUID) -> list[dict[str, Any]]: ...
 	async def get_user_permissions(self, user_id: UUID) -> list[str]: ...
 
 
@@ -48,13 +48,13 @@ class AdminService:
 	async def login(self, *, email: str, password: str) -> dict[str, str]:
 		normalized_email = self._normalize_email(email)
 		user = await self._repo.get_user_by_email(normalized_email)
-		if user is None or not getattr(user, "is_active", False):
+		if user is None or not user["is_active"]:
 			raise UnauthorizedError("Invalid email or password")
-		if not verify_password(password, getattr(user, "hashed_password", "")):
+		if not verify_password(password, user["hashed_password"]):
 			raise UnauthorizedError("Invalid email or password")
 
-		permissions = await self._repo.get_user_permissions(user.id)
-		return self._token_pair(user.id, permissions)
+		permissions = await self._repo.get_user_permissions(user["id"])
+		return self._token_pair(user["id"], permissions)
 
 	async def refresh_tokens(self, *, refresh_token: str) -> dict[str, str]:
 		payload = decode_token(refresh_token)
@@ -69,11 +69,11 @@ class AdminService:
 			raise UnauthorizedError("Wrong token audience")
 
 		user = await self._repo.get_user_by_id(self._parse_uuid(subject, label="user id"))
-		if user is None or not getattr(user, "is_active", False):
+		if user is None or not user["is_active"]:
 			raise UnauthorizedError("User is not available")
 
-		permissions = await self._repo.get_user_permissions(user.id)
-		return self._token_pair(user.id, permissions)
+		permissions = await self._repo.get_user_permissions(user["id"])
+		return self._token_pair(user["id"], permissions)
 
 	async def create_system_user(self, data: dict[str, Any], role_names: list[str]) -> dict[str, Any]:
 		username = data.get("username")
@@ -105,7 +105,7 @@ class AdminService:
 		)
 
 		for role in resolved_roles:
-			await self._repo.assign_role_to_user(user.id, role.id)
+			await self._repo.assign_role_to_user(user["id"], role["id"])
 
 		return self._system_user_to_payload(user, resolved_roles)
 
@@ -126,7 +126,7 @@ class AdminService:
 				raise ValidationError("Username must be a string")
 			normalized_username = self._normalize_username(username)
 			existing_user = await self._repo.get_user_by_username(normalized_username)
-			if existing_user is not None and existing_user.id != current_user.id:
+			if existing_user is not None and existing_user["id"] != current_user["id"]:
 				raise ConflictError("Username is already in use")
 			updates["username"] = normalized_username
 
@@ -136,7 +136,7 @@ class AdminService:
 				raise ValidationError("Email must be a string")
 			normalized_email = self._normalize_email(email)
 			existing_user = await self._repo.get_user_by_email(normalized_email)
-			if existing_user is not None and existing_user.id != current_user.id:
+			if existing_user is not None and existing_user["id"] != current_user["id"]:
 				raise ConflictError("Email is already in use")
 			updates["email"] = normalized_email
 
@@ -172,10 +172,10 @@ class AdminService:
 		if role is None:
 			raise NotFoundError("Role not found")
 
-		if await self._repo.get_user_role(normalized_user_id, role.id):
+		if await self._repo.get_user_role(normalized_user_id, role["id"]):
 			raise ConflictError("Role is already assigned to the system user")
 
-		user_role = await self._repo.assign_role_to_user(normalized_user_id, role.id)
+		user_role = await self._repo.assign_role_to_user(normalized_user_id, role["id"])
 		return self._role_assignment_to_payload(user_role, role)
 
 	async def revoke_role(self, user_id: UUID | str, role_id: UUID | str) -> None:
@@ -238,7 +238,7 @@ class AdminService:
 		if "name" in data:
 			name = self._normalize_name(data.get("name"), label="role name")
 			existing_role = await self._repo.get_role_by_name(name)
-			if existing_role is not None and existing_role.id != normalized_role_id:
+			if existing_role is not None and existing_role["id"] != normalized_role_id:
 				raise ConflictError("Role already exists")
 			updates["name"] = name
 
@@ -264,7 +264,7 @@ class AdminService:
 		if await self._repo.get_user_by_email(email):
 			raise ConflictError("Email is already in use")
 
-	async def _resolve_roles_by_name(self, role_names: list[str]) -> list[Any]:
+	async def _resolve_roles_by_name(self, role_names: list[str]) -> list[dict[str, Any]]:
 		unique_role_names: list[str] = []
 		for raw_role_name in role_names:
 			if not isinstance(raw_role_name, str):
@@ -274,7 +274,7 @@ class AdminService:
 			if normalized_role_name not in unique_role_names:
 				unique_role_names.append(normalized_role_name)
 
-		resolved_roles: list[Any] = []
+		resolved_roles: list[dict[str, Any]] = []
 		for role_name in unique_role_names:
 			role = await self._repo.get_role_by_name(role_name)
 			if role is None:
@@ -283,7 +283,7 @@ class AdminService:
 
 		return resolved_roles
 
-	async def _require_existing_user(self, user_id: UUID) -> Any:
+	async def _require_existing_user(self, user_id: UUID) -> dict[str, Any]:
 		user = await self._repo.get_user_by_id(user_id)
 		if user is None:
 			raise NotFoundError("System user not found")
@@ -348,34 +348,19 @@ class AdminService:
 		if len(password) < 8:
 			raise ValidationError("Password must be at least 8 characters long")
 
-	def _system_user_to_payload(self, user: Any, roles: list[Any]) -> dict[str, Any]:
+	def _system_user_to_payload(self, user: dict[str, Any], roles: list[dict[str, Any]]) -> dict[str, Any]:
 		return {
-			"id": user.id,
-			"username": user.username,
-			"email": user.email,
-			"is_active": user.is_active,
-			"created_at": user.created_at,
-			"role_names": [role.name for role in roles],
+			**{field: user[field] for field in ("id", "username", "email", "is_active", "created_at")},
+			"role_names": [role["name"] for role in roles],
 		}
 
-	def _role_to_payload(self, role: Any) -> dict[str, Any]:
-		return {
-			"id": role.id,
-			"name": role.name,
-			"description": role.description,
-			"can_manage_system_users": role.can_manage_system_users,
-			"can_read_system_users": role.can_read_system_users,
-			"can_manage_roles": role.can_manage_roles,
-			"can_read_system_permissions": role.can_read_system_permissions,
-			"can_delete_posts": role.can_delete_posts,
-		}
+	def _role_to_payload(self, role: dict[str, Any]) -> dict[str, Any]:
+		return dict(role)
 
-	def _role_assignment_to_payload(self, user_role: Any, role: Any) -> dict[str, Any]:
+	def _role_assignment_to_payload(self, user_role: dict[str, Any], role: dict[str, Any]) -> dict[str, Any]:
 		return {
-			"user_id": user_role.user_id,
-			"role_id": user_role.role_id,
-			"role_name": role.name,
-			"assigned_at": user_role.assigned_at,
+			**user_role,
+			"role_name": role["name"],
 		}
 
 __all__ = ["AdminService"]
