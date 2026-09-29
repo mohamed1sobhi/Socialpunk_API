@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -13,7 +12,7 @@ from app.modules.communities.services.service import CommunityService
 
 class FakeCommunityRepository:
 	def __init__(self) -> None:
-		self.communities: dict[UUID, SimpleNamespace] = {}
+		self.communities: dict[UUID, dict[str, Any]] = {}
 		self.members: set[tuple[UUID, UUID]] = set()
 		self.accessible_ids: list[UUID] = []
 		self.last_accessible_viewer: UUID | None = None
@@ -23,7 +22,7 @@ class FakeCommunityRepository:
 
 	async def get_member(self, user_id: UUID, community_id: UUID):
 		if (user_id, community_id) in self.members:
-			return SimpleNamespace(id=uuid4())
+			return {"id": uuid4()}
 		return None
 
 	async def list_accessible_ids(self, viewer_id: UUID | None) -> list[UUID]:
@@ -50,11 +49,7 @@ class FakeSession:
 async def test_public_community_is_visible_anonymously() -> None:
 	repo = FakeCommunityRepository()
 	community_id = uuid4()
-	repo.communities[community_id] = SimpleNamespace(
-		id=community_id,
-		owner_id=uuid4(),
-		visibility="public",
-	)
+	repo.communities[community_id] = {"id": community_id, "owner_id": uuid4(), "visibility": "public"}
 
 	access = await CommunityService(cast(Any, repo), cast(Any, FakeUsersClient())).get_access(
 		community_id,
@@ -71,11 +66,7 @@ async def test_private_community_requires_owner_or_member() -> None:
 	owner_id = uuid4()
 	member_id = uuid4()
 	nonmember_id = uuid4()
-	repo.communities[community_id] = SimpleNamespace(
-		id=community_id,
-		owner_id=owner_id,
-		visibility="private",
-	)
+	repo.communities[community_id] = {"id": community_id, "owner_id": owner_id, "visibility": "private"}
 	repo.members.add((member_id, community_id))
 	service = CommunityService(cast(Any, repo), cast(Any, FakeUsersClient()))
 
@@ -114,5 +105,6 @@ async def test_repository_normalizes_api_visibility_to_lowercase_enum_values() -
 		}
 	)
 
-	assert community.visibility is CommunityVisibility.PUBLIC
+	assert community["visibility"] == "public"
+	assert cast(Any, session.added).visibility is CommunityVisibility.PUBLIC
 	assert CommunityVisibility.PUBLIC.value == "public"

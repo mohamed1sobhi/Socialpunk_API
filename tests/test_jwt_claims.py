@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import MutableMapping
-from types import SimpleNamespace
 from typing import Any, cast
 from uuid import uuid4
 
@@ -30,7 +29,7 @@ class FakeUserRepository:
 
     async def get_by_id(self, user_id: Any) -> Any:
         self.lookups += 1
-        return SimpleNamespace(id=user_id, is_active=True)
+        return {"id": user_id, "is_active": True}
 
 
 class FakeAdminRepository:
@@ -39,7 +38,7 @@ class FakeAdminRepository:
 
     async def get_user_by_id(self, user_id: Any) -> Any:
         self.lookups += 1
-        return SimpleNamespace(id=user_id, is_active=True)
+        return {"id": user_id, "is_active": True}
 
     async def get_user_permissions(self, user_id: Any) -> list[str]:
         return ["content.posts.delete"]
