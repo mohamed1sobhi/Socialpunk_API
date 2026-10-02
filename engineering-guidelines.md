@@ -111,6 +111,13 @@ Cross-module calls are always exactly **one hop**: `clients/` → `public/`. Cha
 
 ## Frontend API Ownership Boundaries
 
+### Route File Layout And Registration
+
+- Module `api/` packages define endpoints only in `user_routes.py` and `admin_routes.py`, according to their audience. Modules expose only the route files they need; anonymous endpoints belong with their user-facing API.
+- Each route file exports its own FastAPI `router`. Module-level `router.py` or `routes.py` aggregators are forbidden, and `api/__init__.py` must not import or aggregate routers.
+- `app/modules/router_registry.py` is the single global route registry, alongside `model_registry.py`. Its explicit `ROUTER_MODULES` tuple lists every route module to register.
+- `register_routers(app)` dynamically imports the listed route modules and includes each router with the shared `/api/v1` prefix. `main.py` registers all module routes through this function.
+
 From the frontend perspective, each module API owns a distinct responsibility boundary:
 
 - `users/api/` owns non-system user registration, login, refresh-token flows, and user CRUD/profile operations.

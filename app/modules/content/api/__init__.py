@@ -1,3 +1,1 @@
-from .router import router
-
-__all__ = ["router"]
+"""User and system content HTTP route definitions."""
