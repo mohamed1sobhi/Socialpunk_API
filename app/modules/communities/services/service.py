@@ -57,7 +57,7 @@ class CommunityRepositoryProtocol(Protocol):
 	async def get_member_permissions(self, user_id: UUID, community_id: UUID) -> list[str]: ...
 	async def get_communities_for_user(self, user_id: UUID, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]: ...
 	async def list_members(self, community_id: UUID, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]: ...
-	async def list_member_ids(self, community_id: UUID) -> list[UUID]: ...
+	async def list_member_ids(self, community_id: UUID, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]: ...
 
 
 class UsersClientProtocol(Protocol):
@@ -324,13 +324,18 @@ class CommunityService:
 			"owner_id": community["owner_id"],
 		}
 
-	async def list_member_ids(self, community_id: UUID | str) -> dict[str, Any]:
+	async def list_member_ids(self, community_id: UUID | str, *, limit: int = 500, after: str | None = None) -> dict[str, Any]:
 		normalized_community_id = self._parse_uuid(community_id, label="community id")
+		limit = self._pagination.limit(limit, maximum=1000)
+		scope = f"member-ids:{normalized_community_id}:joined-asc"
+		anchor = self._pagination.decode(after, scope)
 		await self._require_existing_community(normalized_community_id)
-		member_ids = await self._repo.list_member_ids(normalized_community_id)
+		rows = await self._repo.list_member_ids(normalized_community_id, limit + 1, anchor)
+		items, page_info = self._pagination.page(rows, limit, scope, time_field="joined_at")
 		return {
 			"community_id": normalized_community_id,
-			"member_ids": member_ids,
+			"member_ids": [item["user_id"] for item in items],
+			"page_info": page_info,
 		}
 
 	async def list_user_communities(self, user_id: UUID | str, *, limit: int = 50, after: str | None = None) -> dict[str, Any]:

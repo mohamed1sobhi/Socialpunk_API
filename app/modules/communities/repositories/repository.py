@@ -206,13 +206,16 @@ class CommunityRepository:
 		statement = select(Community.owner_id).where(Community.id == community_id)
 		return await self._session.scalar(statement)
 
-	async def list_member_ids(self, community_id: UUID) -> list[UUID]:
+	async def list_member_ids(self, community_id: UUID, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]:
 		statement = (
-			select(CommunityMember.user_id)
+			select(CommunityMember.id, CommunityMember.user_id, CommunityMember.joined_at)
 			.where(CommunityMember.community_id == community_id)
-			.order_by(CommunityMember.joined_at.asc())
+			.order_by(CommunityMember.joined_at.asc(), CommunityMember.id.asc())
+			.limit(limit)
 		)
-		return list((await self._session.scalars(statement)).all())
+		if after is not None:
+			statement = statement.where(tuple_(CommunityMember.joined_at, CommunityMember.id) > after)
+		return [dict(row) for row in (await self._session.execute(statement)).mappings()]
 
 
 __all__ = ["CommunityRepository"]

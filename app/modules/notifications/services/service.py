@@ -47,7 +47,7 @@ class UsersClientProtocol(Protocol):
 
 class CommunitiesClientProtocol(Protocol):
 	async def get_owner(self, community_id: UUID | str) -> dict[str, Any]: ...
-	async def list_member_ids(self, community_id: UUID | str) -> dict[str, Any]: ...
+	async def list_member_ids(self, community_id: UUID | str, *, limit: int = 500, after: str | None = None) -> dict[str, Any]: ...
 
 
 class NotificationService:
@@ -198,26 +198,30 @@ class NotificationService:
 		community_id = self._parse_uuid(event.community_id, label="community id")
 		author_id = self._parse_uuid(event.author_id, label="author id")
 		post_id = self._parse_uuid(event.post_id, label="post id")
-		members = await self._communities_client.list_member_ids(community_id)
+		after = None
+		while True:
+			members = await self._communities_client.list_member_ids(community_id, limit=500, after=after)
+			for member_id_value in members["member_ids"]:
+				recipient_id = self._parse_uuid(member_id_value, label="member id")
+				if recipient_id == author_id:
+					continue
 
-		for member_id_value in members["member_ids"]:
-			recipient_id = self._parse_uuid(member_id_value, label="member id")
-			if recipient_id == author_id:
-				continue
-
-			payload = {
-				"event_id": str(event.event_id),
-				"post_id": str(post_id),
-				"author_id": str(author_id),
-				"community_id": str(community_id),
-			}
-			await self._persist_and_deliver(
-				recipient_id=recipient_id,
-				notification_type="post_created",
-				payload=payload,
-				email=True,
-				sms=False,
-			)
+				payload = {
+					"event_id": str(event.event_id),
+					"post_id": str(post_id),
+					"author_id": str(author_id),
+					"community_id": str(community_id),
+				}
+				await self._persist_and_deliver(
+					recipient_id=recipient_id,
+					notification_type="post_created",
+					payload=payload,
+					email=True,
+					sms=False,
+				)
+			if not members["page_info"]["has_more"]:
+				break
+			after = members["page_info"]["next_cursor"]
 
 	async def _persist_and_deliver(
 		self,

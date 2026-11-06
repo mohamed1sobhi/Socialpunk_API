@@ -8,6 +8,7 @@ from app.modules.communities.schemas.public_schemas.requests import (
 	CommunityAccessLookupRequest,
 	CommunityLookupRequest,
 	CommunityMembershipLookupRequest,
+	CommunityMemberIdsRequest,
 )
 
 
@@ -21,7 +22,7 @@ class CommunityServiceProtocol(Protocol):
 	async def get_member(self, user_id: UUID | str, community_id: UUID | str) -> dict[str, Any]: ...
 	async def is_member(self, user_id: UUID | str, community_id: UUID | str) -> dict[str, Any]: ...
 	async def get_owner(self, community_id: UUID | str) -> dict[str, Any]: ...
-	async def list_member_ids(self, community_id: UUID | str) -> dict[str, Any]: ...
+	async def list_member_ids(self, community_id: UUID | str, *, limit: int = 500, after: str | None = None) -> dict[str, Any]: ...
 	async def list_roles(self) -> dict[str, Any]: ...
 	async def list_permissions(self) -> dict[str, Any]: ...
 
@@ -63,9 +64,9 @@ class CommunityFacade:
 		request = CommunityLookupRequest.model_validate({"community_id": community_id})
 		return await self._service.get_owner(request.community_id)
 
-	async def list_member_ids(self, community_id: UUID | str) -> dict[str, Any]:
-		request = CommunityLookupRequest.model_validate({"community_id": community_id})
-		return await self._service.list_member_ids(request.community_id)
+	async def list_member_ids(self, community_id: UUID | str, *, limit: int = 500, after: str | None = None) -> dict[str, Any]:
+		request = CommunityMemberIdsRequest.model_validate({"community_id": community_id, "limit": limit, "after": after})
+		return await self._service.list_member_ids(request.community_id, limit=request.limit, after=request.after)
 
 	async def list_roles(self) -> dict[str, Any]:
 		return await self._service.list_roles()
