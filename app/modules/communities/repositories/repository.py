@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.communities.models.models import (
@@ -45,12 +46,15 @@ class CommunityRepository:
 		community = await self._get_community(community_id)
 		return self._community_payload(community) if community is not None else None
 
-	async def list_public(self) -> list[dict[str, Any]]:
+	async def list_public(self, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]:
 		statement = (
 			select(Community)
 			.where(Community.visibility == CommunityVisibility.PUBLIC)
-			.order_by(Community.created_at.desc())
+			.order_by(Community.created_at.desc(), Community.id.desc())
+			.limit(limit)
 		)
+		if after is not None:
+			statement = statement.where(tuple_(Community.created_at, Community.id) < after)
 		return [self._community_payload(row) for row in (await self._session.scalars(statement)).all()]
 
 	async def list_accessible_ids(self, viewer_id: UUID | None) -> list[UUID]:
@@ -69,7 +73,6 @@ class CommunityRepository:
 				)
 			)
 
-		statement = statement.order_by(Community.created_at.desc(), Community.id.desc())
 		return list((await self._session.scalars(statement)).all())
 
 	async def create_community(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -176,21 +179,27 @@ class CommunityRepository:
 		roles = list((await self._session.scalars(statement)).all())
 		return sorted({permission for role in roles for permission in role.permission_names})
 
-	async def get_communities_for_user(self, user_id: UUID) -> list[dict[str, Any]]:
+	async def get_communities_for_user(self, user_id: UUID, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]:
 		statement = (
 			select(Community)
 			.join(CommunityMember, CommunityMember.community_id == Community.id)
 			.where(CommunityMember.user_id == user_id)
-			.order_by(Community.created_at.desc())
+			.order_by(Community.created_at.desc(), Community.id.desc())
+			.limit(limit)
 		)
+		if after is not None:
+			statement = statement.where(tuple_(Community.created_at, Community.id) < after)
 		return [self._community_payload(row) for row in (await self._session.scalars(statement)).all()]
 
-	async def list_members(self, community_id: UUID) -> list[dict[str, Any]]:
+	async def list_members(self, community_id: UUID, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]:
 		statement = (
 			select(CommunityMember)
 			.where(CommunityMember.community_id == community_id)
-			.order_by(CommunityMember.joined_at.asc())
+			.order_by(CommunityMember.joined_at.asc(), CommunityMember.id.asc())
+			.limit(limit)
 		)
+		if after is not None:
+			statement = statement.where(tuple_(CommunityMember.joined_at, CommunityMember.id) > after)
 		return [self._member_payload(row) for row in (await self._session.scalars(statement)).all()]
 
 	async def get_owner_id(self, community_id: UUID) -> UUID | None:

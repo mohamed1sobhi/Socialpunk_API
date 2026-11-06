@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -28,9 +29,15 @@ COMMUNITY_PERMISSION_DEFINITIONS = (
 )
 
 
+class PaginationProtocol(Protocol):
+	def limit(self, value: int, *, maximum: int = 100) -> int: ...
+	def decode(self, token: str | None, scope: str, *, timestamp: bool = True) -> Any: ...
+	def page(self, rows: list[dict[str, Any]], limit: int, scope: str, *, time_field: str | None = "created_at", id_field: str = "id") -> tuple[list[dict[str, Any]], dict[str, Any]]: ...
+
+
 class CommunityRepositoryProtocol(Protocol):
 	async def get_by_id(self, community_id: UUID) -> dict[str, Any] | None: ...
-	async def list_public(self) -> list[dict[str, Any]]: ...
+	async def list_public(self, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]: ...
 	async def list_accessible_ids(self, viewer_id: UUID | None) -> list[UUID]: ...
 	async def create_community(self, data: dict[str, Any]) -> dict[str, Any]: ...
 	async def add_member(self, data: dict[str, Any]) -> dict[str, Any]: ...
@@ -48,8 +55,8 @@ class CommunityRepositoryProtocol(Protocol):
 		role_id: UUID,
 	) -> dict[str, Any] | None: ...
 	async def get_member_permissions(self, user_id: UUID, community_id: UUID) -> list[str]: ...
-	async def get_communities_for_user(self, user_id: UUID) -> list[dict[str, Any]]: ...
-	async def list_members(self, community_id: UUID) -> list[dict[str, Any]]: ...
+	async def get_communities_for_user(self, user_id: UUID, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]: ...
+	async def list_members(self, community_id: UUID, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]: ...
 	async def list_member_ids(self, community_id: UUID) -> list[UUID]: ...
 
 
@@ -58,9 +65,10 @@ class UsersClientProtocol(Protocol):
 
 
 class CommunityService:
-	def __init__(self, repo: CommunityRepositoryProtocol, users_client: UsersClientProtocol) -> None:
+	def __init__(self, repo: CommunityRepositoryProtocol, users_client: UsersClientProtocol, pagination: PaginationProtocol) -> None:
 		self._repo = repo
 		self._users_client = users_client
+		self._pagination = pagination
 
 	async def create_community(self, owner_id: UUID | str, data: dict[str, Any]) -> dict[str, Any]:
 		normalized_owner_id = self._parse_uuid(owner_id, label="owner id")
@@ -91,9 +99,13 @@ class CommunityService:
 
 		return self._community_to_payload(community)
 
-	async def list_public_communities(self) -> dict[str, Any]:
-		communities = await self._repo.list_public()
-		return {"communities": [self._community_to_payload(community) for community in communities]}
+	async def list_public_communities(self, *, limit: int = 50, after: str | None = None) -> dict[str, Any]:
+		limit = self._pagination.limit(limit)
+		scope = "communities:public:created-desc"
+		anchor = self._pagination.decode(after, scope)
+		communities = await self._repo.list_public(limit + 1, anchor)
+		items, page_info = self._pagination.page(communities, limit, scope)
+		return {"communities": items, "page_info": page_info}
 
 	async def get_access(
 		self,
@@ -228,17 +240,22 @@ class CommunityService:
 		if normalized_permission not in permissions:
 			raise ForbiddenError("You do not have the required community permission")
 
-	async def list_members(self, requester_id: UUID | str, community_id: UUID | str) -> dict[str, Any]:
+	async def list_members(self, requester_id: UUID | str, community_id: UUID | str, *, limit: int = 50, after: str | None = None) -> dict[str, Any]:
 		normalized_requester_id = self._parse_uuid(requester_id, label="requester id")
 		normalized_community_id = self._parse_uuid(community_id, label="community id")
+		limit = self._pagination.limit(limit)
+		scope = f"members:{normalized_community_id}:joined-asc:{normalized_requester_id}"
+		anchor = self._pagination.decode(after, scope)
 
 		community = await self._require_existing_community(normalized_community_id)
 		await self._enforce_visibility(community, normalized_requester_id)
 
-		members = await self._repo.list_members(normalized_community_id)
+		members = await self._repo.list_members(normalized_community_id, limit + 1, anchor)
+		items, page_info = self._pagination.page(members, limit, scope, time_field="joined_at")
 		return {
 			"community_id": normalized_community_id,
-			"members": [self._member_to_payload(member) for member in members],
+			"members": items,
+			"page_info": page_info,
 		}
 
 	async def assign_role_to_member(
@@ -316,12 +333,17 @@ class CommunityService:
 			"member_ids": member_ids,
 		}
 
-	async def list_user_communities(self, user_id: UUID | str) -> dict[str, Any]:
+	async def list_user_communities(self, user_id: UUID | str, *, limit: int = 50, after: str | None = None) -> dict[str, Any]:
 		normalized_user_id = self._parse_uuid(user_id, label="user id")
-		communities = await self._repo.get_communities_for_user(normalized_user_id)
+		limit = self._pagination.limit(limit)
+		scope = f"communities:member:created-desc:{normalized_user_id}"
+		anchor = self._pagination.decode(after, scope)
+		communities = await self._repo.get_communities_for_user(normalized_user_id, limit + 1, anchor)
+		items, page_info = self._pagination.page(communities, limit, scope)
 		return {
 			"user_id": normalized_user_id,
-			"communities": [self._community_to_payload(community) for community in communities],
+			"communities": items,
+			"page_info": page_info,
 		}
 
 	async def _require_active_user(self, user_id: UUID) -> dict[str, Any]:

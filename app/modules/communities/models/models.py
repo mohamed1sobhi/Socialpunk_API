@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Enum as SqlEnum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum as SqlEnum, ForeignKey, Index, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.shared.database.base import CommunitiesBase
@@ -37,6 +37,10 @@ class Community(CommunitiesBase):
 	)
 	owner_id: Mapped[UUID] = mapped_column(nullable=False, index=True)
 	created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+	__table_args__ = (
+		Index("ix_communities_public_cursor", created_at.desc(), id.desc(),
+			postgresql_where=text("visibility = 'public'")),
+	)
 
 	members: Mapped[list[CommunityMember]] = relationship(
 		back_populates="community",
@@ -67,6 +71,7 @@ class CommunityMember(CommunitiesBase):
 	__tablename__ = "community_members"
 	__table_args__ = (
 		UniqueConstraint("user_id", "community_id", name="uq_community_members_user_community"),
+		Index("ix_community_members_cursor", "community_id", "joined_at", "id", postgresql_include=["user_id"]),
 	)
 
 	id: Mapped[UUID] = mapped_column(primary_key=True)
