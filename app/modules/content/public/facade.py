@@ -12,14 +12,14 @@ from app.modules.content.schemas.public_schemas.requests import (
 
 class ContentServiceProtocol(Protocol):
 	async def get_post(self, post_id: UUID | str, viewer_id: UUID | str | None) -> dict[str, Any]: ...
-	async def list_user_posts(self, author_id: UUID | str, viewer_id: UUID | str | None) -> dict[str, Any]: ...
+	async def list_user_posts(self, author_id: UUID | str, viewer_id: UUID | str | None, *, limit: int = 50, after: str | None = None) -> dict[str, Any]: ...
 	async def list_community_posts(
 		self,
 		community_id: UUID | str,
 		viewer_id: UUID | str | None,
 		*,
 		limit: int,
-		offset: int,
+		after: str | None,
 	) -> dict[str, Any]: ...
 
 
@@ -37,11 +37,14 @@ class ContentFacade:
 		self,
 		author_id: UUID | str,
 		viewer_id: UUID | str | None = None,
+		*,
+		limit: int = 50,
+		after: str | None = None,
 	) -> dict[str, Any]:
 		request = ContentUserPostsLookupRequest.model_validate(
-			{"author_id": author_id, "viewer_id": viewer_id}
+			{"author_id": author_id, "viewer_id": viewer_id, "limit": limit, "after": after}
 		)
-		return await self._service.list_user_posts(request.author_id, request.viewer_id)
+		return await self._service.list_user_posts(request.author_id, request.viewer_id, limit=request.limit, after=request.after)
 
 	async def list_community_posts(
 		self,
@@ -49,21 +52,21 @@ class ContentFacade:
 		viewer_id: UUID | str | None = None,
 		*,
 		limit: int = 50,
-		offset: int = 0,
+		after: str | None = None,
 	) -> dict[str, Any]:
 		request = ContentCommunityPostsLookupRequest.model_validate(
 			{
 				"community_id": community_id,
 				"viewer_id": viewer_id,
 				"limit": limit,
-				"offset": offset,
+				"after": after,
 			}
 		)
 		return await self._service.list_community_posts(
 			request.community_id,
 			request.viewer_id,
 			limit=request.limit,
-			offset=request.offset,
+			after=request.after,
 		)
 
 

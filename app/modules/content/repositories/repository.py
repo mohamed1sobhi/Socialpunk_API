@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.content.models.models import Post
@@ -33,7 +34,7 @@ class ContentRepository:
 		post = await self._get_post(post_id)
 		return self._payload(post) if post is not None else None
 
-	async def get_feed(self, community_ids: Sequence[UUID], limit: int, offset: int) -> list[dict[str, Any]]:
+	async def get_feed(self, community_ids: Sequence[UUID], limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]:
 		if not community_ids:
 			return []
 
@@ -45,11 +46,12 @@ class ContentRepository:
 			)
 			.order_by(Post.created_at.desc(), Post.id.desc())
 			.limit(limit)
-			.offset(offset)
 		)
+		if after is not None:
+			statement = statement.where(tuple_(Post.created_at, Post.id) < after)
 		return [self._payload(post) for post in (await self._session.scalars(statement)).all()]
 
-	async def get_user_posts(self, author_id: UUID, community_ids: Sequence[UUID]) -> list[dict[str, Any]]:
+	async def get_user_posts(self, author_id: UUID, community_ids: Sequence[UUID], limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]:
 		if not community_ids:
 			return []
 
@@ -61,10 +63,13 @@ class ContentRepository:
 				Post.community_id.in_(list(community_ids)),
 			)
 			.order_by(Post.created_at.desc(), Post.id.desc())
+			.limit(limit)
 		)
+		if after is not None:
+			statement = statement.where(tuple_(Post.created_at, Post.id) < after)
 		return [self._payload(post) for post in (await self._session.scalars(statement)).all()]
 
-	async def get_community_posts(self, community_id: UUID, limit: int, offset: int) -> list[dict[str, Any]]:
+	async def get_community_posts(self, community_id: UUID, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]:
 		statement = (
 			select(Post)
 			.where(
@@ -73,8 +78,9 @@ class ContentRepository:
 			)
 			.order_by(Post.created_at.desc(), Post.id.desc())
 			.limit(limit)
-			.offset(offset)
 		)
+		if after is not None:
+			statement = statement.where(tuple_(Post.created_at, Post.id) < after)
 		return [self._payload(post) for post in (await self._session.scalars(statement)).all()]
 
 	async def soft_delete(self, post_id: UUID) -> bool:
