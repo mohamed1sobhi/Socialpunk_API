@@ -20,9 +20,10 @@ class NotificationLookupRequest(BaseModel):
 
 
 class NotificationListRequest(BaseModel):
+	model_config = ConfigDict(extra="forbid")
 	user_id: UUID
 	limit: Annotated[int, Field(ge=1, le=100)] = 50
-	offset: Annotated[int, Field(ge=0)] = 0
+	after: Annotated[str | None, Field(min_length=1, max_length=2048)] = None
 
 
 class MarkAllNotificationsReadRequest(BaseModel):

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.notifications.models.models import Notification
@@ -34,14 +35,15 @@ class NotificationRepository:
 		await self._session.flush()
 		return self._payload(notification)
 
-	async def get_for_user(self, user_id: UUID, limit: int, offset: int) -> list[dict[str, Any]]:
+	async def get_for_user(self, user_id: UUID, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]:
 		statement = (
 			select(Notification)
 			.where(Notification.recipient_id == user_id)
-			.order_by(Notification.created_at.desc())
+			.order_by(Notification.created_at.desc(), Notification.id.desc())
 			.limit(limit)
-			.offset(offset)
 		)
+		if after is not None:
+			statement = statement.where(tuple_(Notification.created_at, Notification.id) < after)
 		return [self._payload(row) for row in (await self._session.scalars(statement)).all()]
 
 	async def mark_read(self, notification_id: UUID, user_id: UUID) -> dict[str, Any] | None:

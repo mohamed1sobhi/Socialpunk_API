@@ -1,10 +1,21 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class CursorPageRequest(BaseModel):
+	model_config = ConfigDict(extra="forbid")
+	limit: Annotated[int, Field(ge=1, le=100)] = 50
+	after: Annotated[str | None, Field(min_length=1, max_length=2048)] = None
+
+
+class CursorPageInfo(BaseModel):
+	next_cursor: str | None
+	has_more: bool
 
 
 class NotificationResponse(BaseModel):
@@ -20,6 +31,7 @@ class NotificationResponse(BaseModel):
 
 class NotificationListResponse(BaseModel):
 	notifications: list[NotificationResponse]
+	page_info: CursorPageInfo
 
 
 class NotificationReadAllResponse(BaseModel):
@@ -31,6 +43,8 @@ class NotificationWebSocketAuthPayload(BaseModel):
 
 
 __all__ = [
+	"CursorPageRequest",
+	"CursorPageInfo",
 	"NotificationListResponse",
 	"NotificationReadAllResponse",
 	"NotificationResponse",

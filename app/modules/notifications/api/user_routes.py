@@ -10,6 +10,7 @@ from app.modules.notifications.schemas.api_schemas import (
 	NotificationListResponse,
 	NotificationReadAllResponse,
 	NotificationResponse,
+	CursorPageRequest,
 )
 from app.shared.auth.dependencies import get_current_user, require_permission
 from app.shared.exceptions.handlers import UnauthorizedError
@@ -26,10 +27,9 @@ router = APIRouter(tags=["notifications"])
 async def get_notifications(
 	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_notification_service)],
-	limit: Annotated[int, Query(ge=1, le=100)] = 50,
-	offset: Annotated[int, Query(ge=0)] = 0,
+	page: Annotated[CursorPageRequest, Query()],
 ) -> NotificationListResponse:
-	notifications = await service.get_notifications(current_user["sub"], limit, offset)
+	notifications = await service.get_notifications(current_user["sub"], page.limit, page.after)
 	return NotificationListResponse.model_validate(notifications)
 
 
