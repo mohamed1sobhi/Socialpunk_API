@@ -10,6 +10,7 @@ from pydantic import ValidationError as PydanticValidationError
 from app.modules.content.schemas.api_schemas import CreatePostRequest, PostResponse
 from app.modules.content.services.service import ContentService
 from app.shared.exceptions.handlers import ForbiddenError, ValidationError
+from app.shared.pagination import CursorPaginator
 
 
 def make_post(*, community_id: UUID, author_id: UUID | None = None) -> dict[str, Any]:
@@ -22,7 +23,7 @@ class FakeContentRepository:
 	def __init__(self) -> None:
 		self.posts: dict[UUID, dict[str, Any]] = {}
 		self.created_data: dict[str, Any] | None = None
-		self.feed_call: tuple[list[UUID], int, int] | None = None
+		self.feed_call: tuple[list[UUID], int, Any] | None = None
 
 	async def create(self, data: dict[str, Any]):
 		self.created_data = data
@@ -36,18 +37,18 @@ class FakeContentRepository:
 	async def get_by_id(self, post_id: UUID):
 		return self.posts.get(post_id)
 
-	async def get_feed(self, community_ids: list[UUID], limit: int, offset: int):
-		self.feed_call = (community_ids, limit, offset)
+	async def get_feed(self, community_ids: list[UUID], limit: int, after: Any):
+		self.feed_call = (community_ids, limit, after)
 		return [post for post in self.posts.values() if post["community_id"] in community_ids]
 
-	async def get_user_posts(self, author_id: UUID, community_ids: list[UUID]):
+	async def get_user_posts(self, author_id: UUID, community_ids: list[UUID], limit: int, after: Any):
 		return [
 			post
 			for post in self.posts.values()
 			if post["author_id"] == author_id and post["community_id"] in community_ids
 		]
 
-	async def get_community_posts(self, community_id: UUID, limit: int, offset: int):
+	async def get_community_posts(self, community_id: UUID, limit: int, after: Any):
 		return [post for post in self.posts.values() if post["community_id"] == community_id]
 
 	async def soft_delete(self, post_id: UUID) -> bool:
@@ -94,7 +95,7 @@ class FakeCommunitiesClient:
 async def test_create_post_requires_community_membership() -> None:
 	repo = FakeContentRepository()
 	communities = FakeCommunitiesClient()
-	service = ContentService(repo, communities)
+	service = ContentService(repo, communities, CursorPaginator("test"))
 	author_id = uuid4()
 	community_id = uuid4()
 
@@ -113,7 +114,7 @@ async def test_create_post_requires_community_membership() -> None:
 
 @pytest.mark.asyncio
 async def test_create_post_rejects_missing_community() -> None:
-	service = ContentService(FakeContentRepository(), FakeCommunitiesClient())
+	service = ContentService(FakeContentRepository(), FakeCommunitiesClient(), CursorPaginator("test"))
 
 	with pytest.raises(ValidationError, match="Community id is required"):
 		await service.create_post(uuid4(), {"body": "Body"})
@@ -126,7 +127,7 @@ async def test_direct_post_read_uses_community_access() -> None:
 	community_id = uuid4()
 	post = make_post(community_id=community_id)
 	repo.posts[post["id"]] = post
-	service = ContentService(repo, communities)
+	service = ContentService(repo, communities, CursorPaginator("test"))
 
 	with pytest.raises(ForbiddenError):
 		await service.get_post(post["id"], None)
@@ -146,9 +147,9 @@ async def test_feed_filters_by_accessible_communities_before_pagination() -> Non
 	hidden_post = make_post(community_id=hidden_id)
 	repo.posts = {visible_post["id"]: visible_post, hidden_post["id"]: hidden_post}
 
-	payload = await ContentService(repo, communities).list_feed(None, limit=10, offset=2)
+	payload = await ContentService(repo, communities, CursorPaginator("test")).list_feed(None, limit=10)
 
-	assert repo.feed_call == ([accessible_id], 10, 2)
+	assert repo.feed_call == ([accessible_id], 11, None)
 	assert [post["id"] for post in payload["posts"]] == [visible_post["id"]]
 
 

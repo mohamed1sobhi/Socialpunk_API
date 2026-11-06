@@ -8,6 +8,7 @@ import pytest
 from app.modules.communities.models.models import CommunityVisibility
 from app.modules.communities.repositories.repository import CommunityRepository
 from app.modules.communities.services.service import CommunityService
+from app.shared.pagination import CursorPaginator
 
 
 class FakeCommunityRepository:
@@ -51,7 +52,7 @@ async def test_public_community_is_visible_anonymously() -> None:
 	community_id = uuid4()
 	repo.communities[community_id] = {"id": community_id, "owner_id": uuid4(), "visibility": "public"}
 
-	access = await CommunityService(cast(Any, repo), cast(Any, FakeUsersClient())).get_access(
+	access = await CommunityService(cast(Any, repo), cast(Any, FakeUsersClient()), CursorPaginator("test")).get_access(
 		community_id,
 		None,
 	)
@@ -68,7 +69,7 @@ async def test_private_community_requires_owner_or_member() -> None:
 	nonmember_id = uuid4()
 	repo.communities[community_id] = {"id": community_id, "owner_id": owner_id, "visibility": "private"}
 	repo.members.add((member_id, community_id))
-	service = CommunityService(cast(Any, repo), cast(Any, FakeUsersClient()))
+	service = CommunityService(cast(Any, repo), cast(Any, FakeUsersClient()), CursorPaginator("test"))
 
 	assert (await service.get_access(community_id, None))["can_view"] is False
 	assert (await service.get_access(community_id, nonmember_id))["can_view"] is False
@@ -80,7 +81,7 @@ async def test_private_community_requires_owner_or_member() -> None:
 async def test_accessible_ids_support_anonymous_and_authenticated_viewers() -> None:
 	repo = FakeCommunityRepository()
 	repo.accessible_ids = [uuid4(), uuid4()]
-	service = CommunityService(cast(Any, repo), cast(Any, FakeUsersClient()))
+	service = CommunityService(cast(Any, repo), cast(Any, FakeUsersClient()), CursorPaginator("test"))
 
 	assert await service.list_accessible_community_ids(None) == {"community_ids": repo.accessible_ids}
 	assert repo.last_accessible_viewer is None
