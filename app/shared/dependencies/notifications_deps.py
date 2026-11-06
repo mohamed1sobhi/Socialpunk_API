@@ -11,11 +11,14 @@ from app.modules.notifications.public.facade import NotificationFacade
 from app.modules.notifications.repositories.repository import NotificationRepository
 from app.modules.notifications.services.service import NotificationService
 from app.shared.database.session import AsyncSessionLocal, get_db
+from app.shared.config.settings import settings
+from app.shared.pagination import CursorPaginator
 from app.shared.dependencies.communities_deps import (
 	get_community_facade,
 	get_community_repository,
 	get_community_service,
 	get_community_users_client,
+	get_community_pagination,
 )
 from app.shared.dependencies.users_deps import get_user_facade, get_user_repository, get_user_service
 from app.shared.email_client import EmailClient
@@ -57,12 +60,17 @@ def get_notification_connection_manager():
 	return connection_manager
 
 
+def get_notification_pagination() -> CursorPaginator:
+	return CursorPaginator(settings.SECRET_KEY)
+
+
 def get_notification_service(
 	repo: Annotated[NotificationRepository, Depends(get_notification_repository)],
 	users_client: Annotated[UsersClient, Depends(get_notification_users_client)],
 	communities_client: Annotated[CommunitiesClient, Depends(get_notification_communities_client)],
 	email_client: Annotated[EmailClient, Depends(get_email_client)],
 	sms_client: Annotated[TwilioSMSClient, Depends(get_sms_client)],
+	pagination: Annotated[CursorPaginator, Depends(get_notification_pagination)],
 ) -> NotificationService:
 	return NotificationService(
 		repo,
@@ -71,6 +79,7 @@ def get_notification_service(
 		sms_client,
 		users_client,
 		communities_client,
+		pagination,
 		register_event_listeners=False,
 	)
 
@@ -98,7 +107,7 @@ async def create_notification_service_singleton() -> NotificationService:
 
 	community_repo = get_community_repository(communities_db)
 	community_users_client = get_community_users_client(users_facade)
-	community_service = get_community_service(community_repo, community_users_client)
+	community_service = get_community_service(community_repo, community_users_client, get_community_pagination())
 	community_facade = get_community_facade(community_service)
 
 	_notification_service_singleton = NotificationService(
@@ -108,6 +117,7 @@ async def create_notification_service_singleton() -> NotificationService:
 		TwilioSMSClient(),
 		UsersClient(users_facade),
 		CommunitiesClient(community_facade),
+		get_notification_pagination(),
 		register_event_listeners=True,
 	)
 	return _notification_service_singleton
@@ -125,6 +135,7 @@ async def close_notification_service_singleton() -> None:
 
 
 __all__ = [
+	"get_notification_pagination",
 	"close_notification_service_singleton",
 	"create_notification_service_singleton",
 	"get_email_client",

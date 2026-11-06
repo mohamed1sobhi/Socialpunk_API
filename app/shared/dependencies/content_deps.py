@@ -10,6 +10,8 @@ from app.modules.content.public.facade import ContentFacade
 from app.modules.content.repositories.repository import ContentRepository
 from app.modules.content.services.service import ContentService
 from app.shared.database.session import get_db
+from app.shared.config.settings import settings
+from app.shared.pagination import CursorPaginator
 from app.shared.dependencies.communities_deps import get_community_facade
 
 
@@ -25,11 +27,16 @@ def get_content_communities_client(
 	return CommunitiesClient(communities_facade)
 
 
+def get_content_pagination() -> CursorPaginator:
+	return CursorPaginator(settings.SECRET_KEY)
+
+
 def get_content_service(
 	repo: Annotated[ContentRepository, Depends(get_content_repository)],
 	communities_client: Annotated[CommunitiesClient, Depends(get_content_communities_client)],
+	pagination: Annotated[CursorPaginator, Depends(get_content_pagination)],
 ) -> ContentService:
-	return ContentService(repo, communities_client)
+	return ContentService(repo, communities_client, pagination)
 
 
 def get_content_facade(
@@ -39,6 +46,7 @@ def get_content_facade(
 
 
 __all__ = [
+	"get_content_pagination",
 	"get_content_communities_client",
 	"get_content_facade",
 	"get_content_repository",
