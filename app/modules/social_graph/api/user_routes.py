@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.modules.social_graph.schemas.api_schemas import (
 	FriendListResponse,
@@ -11,6 +11,7 @@ from app.modules.social_graph.schemas.api_schemas import (
 	FriendshipResponse,
 	PendingFriendRequestsResponse,
 	SendFriendRequestRequest,
+	CursorPageRequest,
 )
 from app.shared.auth.dependencies import require_permission
 from app.shared.dependencies.social_graph_deps import get_social_graph_service
@@ -68,8 +69,9 @@ async def reject_friend_request(
 async def list_friends(
 	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_social_graph_service)],
+	page: Annotated[CursorPageRequest, Query()],
 ) -> FriendListResponse:
-	friends = await service.get_friends(current_user["sub"])
+	friends = await service.get_friends(current_user["sub"], limit=page.limit, after=page.after)
 	return FriendListResponse.model_validate(friends)
 
 
@@ -77,6 +79,7 @@ async def list_friends(
 async def list_pending_friend_requests(
 	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_social_graph_service)],
+	page: Annotated[CursorPageRequest, Query()],
 ) -> PendingFriendRequestsResponse:
-	pending_requests = await service.get_pending_requests(current_user["sub"])
+	pending_requests = await service.get_pending_requests(current_user["sub"], limit=page.limit, after=page.after)
 	return PendingFriendRequestsResponse.model_validate(pending_requests)

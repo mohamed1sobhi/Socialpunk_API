@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 from app.shared.events.bus import bus
 from app.shared.events.events import FriendRequestSentEvent, FriendshipFormedEvent
 from app.shared.exceptions.handlers import ConflictError, ForbiddenError, NotFoundError, ValidationError
+
+
+class PaginationProtocol(Protocol):
+	def limit(self, value: int, *, maximum: int = 100) -> int: ...
+	def decode(self, token: str | None, scope: str, *, timestamp: bool = True) -> Any: ...
+	def page(self, rows: list[dict[str, Any]], limit: int, scope: str, *, time_field: str | None = "created_at", id_field: str = "id") -> tuple[list[dict[str, Any]], dict[str, Any]]: ...
 
 
 class SocialGraphRepositoryProtocol(Protocol):
@@ -22,8 +29,8 @@ class SocialGraphRepositoryProtocol(Protocol):
 	async def reject_request(self, request_id: UUID) -> dict[str, Any] | None: ...
 	async def create_friendship(self, user_a: UUID, user_b: UUID) -> dict[str, Any]: ...
 	async def delete_request(self, request_id: UUID) -> None: ...
-	async def get_friends(self, user_id: UUID) -> list[UUID]: ...
-	async def get_pending_requests(self, user_id: UUID) -> list[dict[str, Any]]: ...
+	async def get_friends(self, user_id: UUID, limit: int, after: UUID | None) -> list[dict[str, Any]]: ...
+	async def get_pending_requests(self, user_id: UUID, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]: ...
 
 
 class UsersClientProtocol(Protocol):
@@ -31,9 +38,10 @@ class UsersClientProtocol(Protocol):
 
 
 class SocialGraphService:
-	def __init__(self, repo: SocialGraphRepositoryProtocol, users_client: UsersClientProtocol) -> None:
+	def __init__(self, repo: SocialGraphRepositoryProtocol, users_client: UsersClientProtocol, pagination: PaginationProtocol) -> None:
 		self._repo = repo
 		self._users_client = users_client
+		self._pagination = pagination
 
 	async def send_request(self, requester_id: UUID | str, receiver_id: UUID | str) -> dict[str, Any]:
 		normalized_requester_id = self._parse_uuid(requester_id, label="requester id")
@@ -112,24 +120,34 @@ class SocialGraphService:
 			raise NotFoundError("Friend request not found")
 		return self._friend_request_to_payload(rejected_request)
 
-	async def get_friends(self, user_id: UUID | str) -> dict[str, Any]:
+	async def get_friends(self, user_id: UUID | str, *, limit: int = 50, after: str | None = None) -> dict[str, Any]:
 		normalized_user_id = self._parse_uuid(user_id, label="user id")
+		limit = self._pagination.limit(limit)
+		scope = f"friends:id-asc:{normalized_user_id}"
+		anchor = self._pagination.decode(after, scope, timestamp=False)
 		await self._require_active_user(normalized_user_id)
 
-		friend_ids = await self._repo.get_friends(normalized_user_id)
+		rows = await self._repo.get_friends(normalized_user_id, limit + 1, anchor)
+		items, page_info = self._pagination.page(rows, limit, scope, time_field=None, id_field="friend_id")
 		return {
 			"user_id": normalized_user_id,
-			"friend_ids": friend_ids,
+			"friend_ids": [item["friend_id"] for item in items],
+			"page_info": page_info,
 		}
 
-	async def get_pending_requests(self, user_id: UUID | str) -> dict[str, Any]:
+	async def get_pending_requests(self, user_id: UUID | str, *, limit: int = 50, after: str | None = None) -> dict[str, Any]:
 		normalized_user_id = self._parse_uuid(user_id, label="user id")
+		limit = self._pagination.limit(limit)
+		scope = f"pending-requests:created-desc:{normalized_user_id}"
+		anchor = self._pagination.decode(after, scope)
 		await self._require_active_user(normalized_user_id)
 
-		friend_requests = await self._repo.get_pending_requests(normalized_user_id)
+		friend_requests = await self._repo.get_pending_requests(normalized_user_id, limit + 1, anchor)
+		items, page_info = self._pagination.page(friend_requests, limit, scope)
 		return {
 			"user_id": normalized_user_id,
-			"requests": [self._friend_request_to_payload(friend_request) for friend_request in friend_requests],
+			"requests": items,
+			"page_info": page_info,
 		}
 
 	async def _require_active_user(self, user_id: UUID) -> dict[str, Any]:

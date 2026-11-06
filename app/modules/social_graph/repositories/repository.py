@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import func, select, tuple_, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.social_graph.models.models import FriendRequest, FriendRequestStatus, Friendship
@@ -45,12 +45,11 @@ class SocialGraphRepository:
 		return self._request_payload(request) if request is not None else None
 
 	async def get_pending_request_for_pair(self, user_a: UUID, user_b: UUID) -> dict[str, Any] | None:
+		user_low, user_high = self._canonical_pair(user_a, user_b)
 		statement = select(FriendRequest).where(
 			FriendRequest.status == FriendRequestStatus.PENDING,
-			or_(
-				and_(FriendRequest.requester_id == user_a, FriendRequest.receiver_id == user_b),
-				and_(FriendRequest.requester_id == user_b, FriendRequest.receiver_id == user_a),
-			),
+			func.least(FriendRequest.requester_id, FriendRequest.receiver_id) == user_low,
+			func.greatest(FriendRequest.requester_id, FriendRequest.receiver_id) == user_high,
 		)
 		request = await self._session.scalar(statement)
 		return self._request_payload(request) if request is not None else None
@@ -97,25 +96,32 @@ class SocialGraphRepository:
 		await self._session.delete(friend_request)
 		await self._session.flush()
 
-	async def get_friends(self, user_id: UUID) -> list[UUID]:
-		statement = select(Friendship).where(
-			or_(Friendship.user_low == user_id, Friendship.user_high == user_id)
-		)
-		friendships = (await self._session.scalars(statement)).all()
-		return [
-			friendship.user_high if friendship.user_low == user_id else friendship.user_low
-			for friendship in friendships
-		]
+	async def get_friends(self, user_id: UUID, limit: int, after: UUID | None) -> list[dict[str, Any]]:
+		low = select(Friendship.user_high.label("friend_id")).where(Friendship.user_low == user_id)
+		high = select(Friendship.user_low.label("friend_id")).where(Friendship.user_high == user_id)
+		if after is not None:
+			low = low.where(Friendship.user_high > after)
+			high = high.where(Friendship.user_low > after)
+		# Bound both directional index scans before merging them.
+		friends = union_all(
+			low.order_by(Friendship.user_high).limit(limit),
+			high.order_by(Friendship.user_low).limit(limit),
+		).subquery()
+		statement = select(friends.c.friend_id).order_by(friends.c.friend_id).limit(limit)
+		return [{"friend_id": row_id} for row_id in (await self._session.scalars(statement)).all()]
 
-	async def get_pending_requests(self, user_id: UUID) -> list[dict[str, Any]]:
+	async def get_pending_requests(self, user_id: UUID, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]:
 		statement = (
 			select(FriendRequest)
 			.where(
 				FriendRequest.receiver_id == user_id,
 				FriendRequest.status == FriendRequestStatus.PENDING,
 			)
-			.order_by(FriendRequest.created_at.desc())
+			.order_by(FriendRequest.created_at.desc(), FriendRequest.id.desc())
+			.limit(limit)
 		)
+		if after is not None:
+			statement = statement.where(tuple_(FriendRequest.created_at, FriendRequest.id) < after)
 		return [self._request_payload(row) for row in (await self._session.scalars(statement)).all()]
 
 	def _canonical_pair(self, user_a: UUID, user_b: UUID) -> tuple[UUID, UUID]:

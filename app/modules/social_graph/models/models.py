@@ -45,8 +45,10 @@ class FriendRequest(SocialGraphBase):
 			func.least(requester_id, receiver_id),
 			func.greatest(requester_id, receiver_id),
 			unique=True,
-			postgresql_where=text("status = 'pending'"),
+			postgresql_where=text("status = 'PENDING'"),
 		),
+		Index("ix_friend_requests_receiver_cursor", "receiver_id", created_at.desc(), id.desc(),
+			postgresql_where=text("status = 'PENDING'")),
 	)
 
 
@@ -61,6 +63,7 @@ class Friendship(SocialGraphBase):
 		CheckConstraint("user_low < user_high", name="ck_friendships_canonical_pair"),
 		Index("ix_friendships_user_low", "user_low"),
 		Index("ix_friendships_user_high", "user_high"),
+		Index("ix_friendships_reverse_pair", "user_high", "user_low"),
 	)
 
 
