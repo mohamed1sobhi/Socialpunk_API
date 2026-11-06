@@ -89,8 +89,8 @@ class AdminRepository:
 		await self._session.flush()
 		return self._role_payload(role)
 
-	async def list_roles(self) -> list[dict[str, Any]]:
-		statement = select(Role).order_by(Role.name.asc())
+	async def list_roles(self, limit: int, offset: int) -> list[dict[str, Any]]:
+		statement = select(Role).order_by(Role.name.asc()).limit(limit).offset(offset)
 		return [self._role_payload(role) for role in (await self._session.scalars(statement)).all()]
 
 	async def update_role(self, role_id: UUID, data: dict[str, Any]) -> dict[str, Any] | None:

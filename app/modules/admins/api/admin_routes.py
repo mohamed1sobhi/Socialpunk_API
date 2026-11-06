@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.modules.admins.schemas.api_schemas import (
@@ -19,6 +19,7 @@ from app.modules.admins.schemas.api_schemas import (
 	SystemUserResponse,
 	SystemUserUpdateRequest,
 	TokenPairResponse,
+	OffsetPageRequest,
 )
 from app.shared.auth.dependencies import require_permission
 from app.shared.dependencies.admins_deps import get_admin_service
@@ -107,9 +108,10 @@ async def deactivate_system_user(
 async def list_roles(
 	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="system", permission=MANAGE_ROLES_PERMISSION))],
 	service: Annotated[Any, Depends(get_admin_service)],
+	page: Annotated[OffsetPageRequest, Query()],
 ) -> RoleListResponse:
 	del current_user
-	roles = await service.list_roles()
+	roles = await service.list_roles(limit=page.limit, offset=page.offset)
 	return RoleListResponse.model_validate(roles)
 
 
