@@ -250,7 +250,7 @@ No module may introduce a dependency not listed in this graph.
 - `alembic/env.py` imports `app/modules/model_registry.py`, then imports every listed model module dynamically so `ALL_METADATA` is populated.
 - All migration revisions live together in `alembic/versions/`; per-schema revision directories are forbidden.
 - Before online upgrades, `alembic/env.py` creates every known PostgreSQL schema and validates that metadata contains no cross-schema foreign keys.
-- `social_graph.friend_requests` keeps directional `requester_id`/`receiver_id` semantics. PostgreSQL must prevent duplicate or reverse-duplicate pending requests with a partial unique index on `LEAST(requester_id, receiver_id), GREATEST(requester_id, receiver_id)` filtered to `status='pending'`.
+- `social_graph.friend_requests` keeps directional `requester_id`/`receiver_id` semantics. PostgreSQL must prevent duplicate or reverse-duplicate pending requests with a partial unique index on `LEAST(requester_id, receiver_id), GREATEST(requester_id, receiver_id)` filtered to `status='PENDING'`. The database stores SQLAlchemy enum names (`PENDING`, `REJECTED`); API/service payloads use lowercase values.
 - `social_graph.friendships` stores accepted friendships exactly once per unordered pair using canonical `user_low=min(user_a, user_b)` and `user_high=max(user_a, user_b)`. Enforce `UNIQUE(user_low, user_high)`, `CHECK(user_low < user_high)`, and indexes on both columns.
 - Accepting a friend request must create one `social_graph.friendships` row and delete the request row. Bidirectional duplicate friendship rows are forbidden.
 - `admins.user_roles.user_id` is an in-schema foreign key to `admins.users.id` because both tables live inside the `admins` schema.
@@ -285,6 +285,15 @@ async with AsyncSessionLocal() as session:
 ---
 
 ## 13. Shared Infrastructure Rules
+
+### Pagination Contract
+
+- User-facing post, notification, community, membership, and social-graph lists use `limit` (1–100) and optional signed `after` cursors, returning the existing collection field plus `page_info: {next_cursor, has_more}`. Admin-role lists use bounded `limit`/`offset` and `page_info: {limit, offset, next_offset, has_more}`.
+- Cursor ordering is `(created_at DESC, id DESC)` except membership lists `(joined_at ASC, id ASC)` and friend IDs `ASC`. Repositories apply strict keyset predicates and fetch `limit + 1`; services return at most `limit` and encode the last emitted row.
+- `shared/pagination.py` is pure infrastructure. Its paginator is constructor-injected by each owning `_deps.py`; services describe the dependency with local protocols and never import its concrete implementation. API pagination models remain module-owned.
+- Cursors are versioned and bound to resource, sort order, and viewer. Authorization is reevaluated per page; cursors never grant access. Lists are live, not cross-request snapshots.
+- Internal member-ID fan-out uses the same membership keyset in batches of at most 1000. Consumers must exhaust all batches. Accessible-community ID sets must not be independently paginated when filtering a global post feed.
+- Community visibility is stored lowercase. Legacy uppercase rows are inspected and explicitly normalized with `scripts/inspect_pagination_data.py`, outside schema-only migrations.
 
 | Component | File | Rule |
 |---|---|---|
