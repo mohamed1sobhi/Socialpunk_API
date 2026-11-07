@@ -1,3 +1,1 @@
-from .router import router
-
-__all__ = ["router"]
+"""Community HTTP route definitions."""

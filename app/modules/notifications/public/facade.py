@@ -18,7 +18,7 @@ class NotificationServiceProtocol(Protocol):
 		type: str,
 		payload: dict[str, Any],
 	) -> dict[str, Any]: ...
-	async def get_notifications(self, user_id: UUID | str, limit: int, offset: int) -> dict[str, Any]: ...
+	async def get_notifications(self, user_id: UUID | str, limit: int, after: str | None) -> dict[str, Any]: ...
 	async def mark_read(self, notification_id: UUID | str, user_id: UUID | str) -> dict[str, Any]: ...
 	async def mark_all_read(self, user_id: UUID | str) -> None: ...
 
@@ -42,12 +42,12 @@ class NotificationFacade:
 		self,
 		user_id: UUID | str,
 		limit: int = 50,
-		offset: int = 0,
+		after: str | None = None,
 	) -> dict[str, Any]:
 		request = NotificationListRequest.model_validate(
-			{"user_id": user_id, "limit": limit, "offset": offset}
+			{"user_id": user_id, "limit": limit, "after": after}
 		)
-		return await self._service.get_notifications(request.user_id, request.limit, request.offset)
+		return await self._service.get_notifications(request.user_id, request.limit, request.after)
 
 	async def mark_read(self, notification_id: UUID | str, user_id: UUID | str) -> dict[str, Any]:
 		request = NotificationLookupRequest.model_validate(

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.modules.communities.schemas.api_schemas import (
 	AssignCommunityRoleRequest,
@@ -15,6 +15,7 @@ from app.modules.communities.schemas.api_schemas import (
 	CommunityRoleResponse,
 	CommunityRolesResponse,
 	CreateCommunityRequest,
+	CursorPageRequest,
 )
 from app.shared.auth.dependencies import require_permission
 from app.shared.dependencies.communities_deps import get_community_service
@@ -36,8 +37,9 @@ async def create_community(
 @router.get("", response_model=CommunityListResponse)
 async def list_public_communities(
 	service: Annotated[Any, Depends(get_community_service)],
+	page: Annotated[CursorPageRequest, Query()],
 ) -> CommunityListResponse:
-	communities = await service.list_public_communities()
+	communities = await service.list_public_communities(limit=page.limit, after=page.after)
 	return CommunityListResponse.model_validate(communities)
 
 
@@ -96,8 +98,9 @@ async def list_community_members(
 	community_id: UUID,
 	current_user: Annotated[dict[str, Any], Depends(require_permission(audience="user"))],
 	service: Annotated[Any, Depends(get_community_service)],
+	page: Annotated[CursorPageRequest, Query()],
 ) -> CommunityMembersResponse:
-	members = await service.list_members(current_user["sub"], community_id)
+	members = await service.list_members(current_user["sub"], community_id, limit=page.limit, after=page.after)
 	return CommunityMembersResponse.model_validate(members)
 
 

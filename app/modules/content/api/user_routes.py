@@ -9,6 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from app.modules.content.schemas.api_schemas import (
 	CommunityPostsResponse,
 	CreatePostRequest,
+	CursorPageRequest,
 	PostListResponse,
 	PostResponse,
 	UserPostsResponse,
@@ -42,11 +43,10 @@ async def create_post(
 async def list_feed(
 	current_user: Annotated[dict[str, Any] | None, Depends(_get_optional_current_user)],
 	service: Annotated[Any, Depends(get_content_service)],
-	limit: Annotated[int, Query(ge=1, le=100)] = 50,
-	offset: Annotated[int, Query(ge=0)] = 0,
+	page: Annotated[CursorPageRequest, Query()],
 ) -> PostListResponse:
 	viewer_id = current_user["sub"] if current_user is not None else None
-	posts = await service.list_feed(viewer_id, limit=limit, offset=offset)
+	posts = await service.list_feed(viewer_id, limit=page.limit, after=page.after)
 	return PostListResponse.model_validate(posts)
 
 
@@ -76,9 +76,10 @@ async def list_user_posts(
 	user_id: UUID,
 	current_user: Annotated[dict[str, Any] | None, Depends(_get_optional_current_user)],
 	service: Annotated[Any, Depends(get_content_service)],
+	page: Annotated[CursorPageRequest, Query()],
 ) -> UserPostsResponse:
 	viewer_id = current_user["sub"] if current_user is not None else None
-	posts = await service.list_user_posts(user_id, viewer_id)
+	posts = await service.list_user_posts(user_id, viewer_id, limit=page.limit, after=page.after)
 	return UserPostsResponse.model_validate(posts)
 
 
@@ -87,15 +88,14 @@ async def list_community_posts(
 	community_id: UUID,
 	current_user: Annotated[dict[str, Any] | None, Depends(_get_optional_current_user)],
 	service: Annotated[Any, Depends(get_content_service)],
-	limit: Annotated[int, Query(ge=1, le=100)] = 50,
-	offset: Annotated[int, Query(ge=0)] = 0,
+	page: Annotated[CursorPageRequest, Query()],
 ) -> CommunityPostsResponse:
 	viewer_id = current_user["sub"] if current_user is not None else None
 	posts = await service.list_community_posts(
 		community_id,
 		viewer_id,
-		limit=limit,
-		offset=offset,
+		limit=page.limit,
+		after=page.after,
 	)
 	return CommunityPostsResponse.model_validate(posts)
 

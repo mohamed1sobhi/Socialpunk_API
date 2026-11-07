@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -13,9 +14,15 @@ from app.shared.events.events import (
 from app.shared.exceptions.handlers import NotFoundError, ValidationError
 
 
+class PaginationProtocol(Protocol):
+	def limit(self, value: int, *, maximum: int = 100) -> int: ...
+	def decode(self, token: str | None, scope: str, *, timestamp: bool = True) -> Any: ...
+	def page(self, rows: list[dict[str, Any]], limit: int, scope: str, *, time_field: str | None = "created_at", id_field: str = "id") -> tuple[list[dict[str, Any]], dict[str, Any]]: ...
+
+
 class NotificationRepositoryProtocol(Protocol):
 	async def create(self, recipient_id: UUID, type: str, payload: dict[str, Any]) -> dict[str, Any]: ...
-	async def get_for_user(self, user_id: UUID, limit: int, offset: int) -> list[dict[str, Any]]: ...
+	async def get_for_user(self, user_id: UUID, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]: ...
 	async def mark_read(self, notification_id: UUID, user_id: UUID) -> dict[str, Any] | None: ...
 	async def mark_all_read(self, user_id: UUID) -> None: ...
 	async def commit(self) -> None: ...
@@ -40,7 +47,7 @@ class UsersClientProtocol(Protocol):
 
 class CommunitiesClientProtocol(Protocol):
 	async def get_owner(self, community_id: UUID | str) -> dict[str, Any]: ...
-	async def list_member_ids(self, community_id: UUID | str) -> dict[str, Any]: ...
+	async def list_member_ids(self, community_id: UUID | str, *, limit: int = 500, after: str | None = None) -> dict[str, Any]: ...
 
 
 class NotificationService:
@@ -52,6 +59,7 @@ class NotificationService:
 		sms_client: SMSClientProtocol,
 		users_client: UsersClientProtocol,
 		communities_client: CommunitiesClientProtocol,
+		pagination: PaginationProtocol,
 		*,
 		register_event_listeners: bool = True,
 	) -> None:
@@ -61,6 +69,7 @@ class NotificationService:
 		self._sms_client = sms_client
 		self._users_client = users_client
 		self._communities_client = communities_client
+		self._pagination = pagination
 		self._event_handlers: list[tuple[type[Any], Any]] = []
 		if register_event_listeners:
 			self._setup_event_listeners()
@@ -95,12 +104,14 @@ class NotificationService:
 			bus.unsubscribe(event_type, handler)
 		self._event_handlers.clear()
 
-	async def get_notifications(self, user_id: UUID | str, limit: int, offset: int) -> dict[str, Any]:
+	async def get_notifications(self, user_id: UUID | str, limit: int = 50, after: str | None = None) -> dict[str, Any]:
 		normalized_user_id = self._parse_uuid(user_id, label="user id")
-		normalized_limit = self._normalize_limit(limit)
-		normalized_offset = self._normalize_offset(offset)
-		notifications = await self._repo.get_for_user(normalized_user_id, normalized_limit, normalized_offset)
-		return {"notifications": [self._notification_to_payload(notification) for notification in notifications]}
+		limit = self._pagination.limit(limit)
+		scope = f"notifications:created-desc:{normalized_user_id}"
+		anchor = self._pagination.decode(after, scope)
+		notifications = await self._repo.get_for_user(normalized_user_id, limit + 1, anchor)
+		items, page_info = self._pagination.page(notifications, limit, scope)
+		return {"notifications": items, "page_info": page_info}
 
 	async def create_notification(
 		self,
@@ -187,26 +198,30 @@ class NotificationService:
 		community_id = self._parse_uuid(event.community_id, label="community id")
 		author_id = self._parse_uuid(event.author_id, label="author id")
 		post_id = self._parse_uuid(event.post_id, label="post id")
-		members = await self._communities_client.list_member_ids(community_id)
+		after = None
+		while True:
+			members = await self._communities_client.list_member_ids(community_id, limit=500, after=after)
+			for member_id_value in members["member_ids"]:
+				recipient_id = self._parse_uuid(member_id_value, label="member id")
+				if recipient_id == author_id:
+					continue
 
-		for member_id_value in members["member_ids"]:
-			recipient_id = self._parse_uuid(member_id_value, label="member id")
-			if recipient_id == author_id:
-				continue
-
-			payload = {
-				"event_id": str(event.event_id),
-				"post_id": str(post_id),
-				"author_id": str(author_id),
-				"community_id": str(community_id),
-			}
-			await self._persist_and_deliver(
-				recipient_id=recipient_id,
-				notification_type="post_created",
-				payload=payload,
-				email=True,
-				sms=False,
-			)
+				payload = {
+					"event_id": str(event.event_id),
+					"post_id": str(post_id),
+					"author_id": str(author_id),
+					"community_id": str(community_id),
+				}
+				await self._persist_and_deliver(
+					recipient_id=recipient_id,
+					notification_type="post_created",
+					payload=payload,
+					email=True,
+					sms=False,
+				)
+			if not members["page_info"]["has_more"]:
+				break
+			after = members["page_info"]["next_cursor"]
 
 	async def _persist_and_deliver(
 		self,
@@ -289,16 +304,6 @@ class NotificationService:
 	def _normalize_payload(self, value: dict[str, Any]) -> dict[str, Any]:
 		if not isinstance(value, dict):
 			raise ValidationError("Notification payload must be an object")
-		return value
-
-	def _normalize_limit(self, value: int) -> int:
-		if value < 1 or value > 100:
-			raise ValidationError("Limit must be between 1 and 100")
-		return value
-
-	def _normalize_offset(self, value: int) -> int:
-		if value < 0:
-			raise ValidationError("Offset must be greater than or equal to 0")
 		return value
 
 

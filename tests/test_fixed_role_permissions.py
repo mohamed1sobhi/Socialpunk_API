@@ -11,6 +11,7 @@ from app.modules.admins.services.service import AdminService
 from app.modules.communities.models.models import CommunityRole
 from app.modules.communities.services.service import CommunityService
 from app.shared.database.base import AdminsBase, CommunitiesBase
+from app.shared.pagination import CursorPaginator
 
 
 def test_admin_role_exposes_enabled_fixed_permissions() -> None:
@@ -72,8 +73,8 @@ class FakeAdminRoleRepository:
 	async def get_role_by_id(self, role_id: Any) -> dict[str, Any] | None:
 		return next((role for role in self.roles.values() if role["id"] == role_id), None)
 
-	async def list_roles(self) -> list[dict[str, Any]]:
-		return list(self.roles.values())
+	async def list_roles(self, limit: int, offset: int) -> list[dict[str, Any]]:
+		return sorted(self.roles.values(), key=lambda role: role["name"])[offset:offset + limit]
 
 	async def create_role(self, data: dict[str, Any]) -> dict[str, Any]:
 		for field_name in (
@@ -120,7 +121,7 @@ async def test_admin_service_creates_and_updates_fixed_role_flags() -> None:
 
 @pytest.mark.asyncio
 async def test_community_service_returns_fixed_permission_catalog() -> None:
-	service = CommunityService(cast(Any, object()), cast(Any, object()))
+	service = CommunityService(cast(Any, object()), cast(Any, object()), CursorPaginator("test"))
 
 	permissions = await service.list_permissions()
 

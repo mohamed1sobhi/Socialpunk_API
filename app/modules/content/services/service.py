@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
@@ -11,12 +12,18 @@ from app.shared.exceptions.handlers import ForbiddenError, NotFoundError, Valida
 CONTENT_POSTS_DELETE_PERMISSION = "content.posts.delete"
 
 
+class PaginationProtocol(Protocol):
+	def limit(self, value: int, *, maximum: int = 100) -> int: ...
+	def decode(self, token: str | None, scope: str, *, timestamp: bool = True) -> Any: ...
+	def page(self, rows: list[dict[str, Any]], limit: int, scope: str, *, time_field: str | None = "created_at", id_field: str = "id") -> tuple[list[dict[str, Any]], dict[str, Any]]: ...
+
+
 class ContentRepositoryProtocol(Protocol):
 	async def create(self, data: dict[str, Any]) -> dict[str, Any]: ...
 	async def get_by_id(self, post_id: UUID) -> dict[str, Any] | None: ...
-	async def get_feed(self, community_ids: list[UUID], limit: int, offset: int) -> list[dict[str, Any]]: ...
-	async def get_user_posts(self, author_id: UUID, community_ids: list[UUID]) -> list[dict[str, Any]]: ...
-	async def get_community_posts(self, community_id: UUID, limit: int, offset: int) -> list[dict[str, Any]]: ...
+	async def get_feed(self, community_ids: list[UUID], limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]: ...
+	async def get_user_posts(self, author_id: UUID, community_ids: list[UUID], limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]: ...
+	async def get_community_posts(self, community_id: UUID, limit: int, after: tuple[datetime, UUID] | None) -> list[dict[str, Any]]: ...
 	async def soft_delete(self, post_id: UUID) -> bool: ...
 
 
@@ -34,9 +41,10 @@ class CommunitiesClientProtocol(Protocol):
 
 
 class ContentService:
-	def __init__(self, repo: ContentRepositoryProtocol, communities_client: CommunitiesClientProtocol) -> None:
+	def __init__(self, repo: ContentRepositoryProtocol, communities_client: CommunitiesClientProtocol, pagination: PaginationProtocol) -> None:
 		self._repo = repo
 		self._communities_client = communities_client
+		self._pagination = pagination
 
 	async def create_post(self, author_id: UUID | str, data: dict[str, Any]) -> dict[str, Any]:
 		normalized_author_id = self._parse_uuid(author_id, label="author id")
@@ -74,29 +82,39 @@ class ContentService:
 		self,
 		viewer_id: UUID | str | None,
 		*,
-		limit: int,
-		offset: int,
+		limit: int = 50,
+		after: str | None = None,
 	) -> dict[str, Any]:
 		normalized_viewer_id = self._parse_optional_uuid(viewer_id, label="viewer id")
-		normalized_limit = self._normalize_limit(limit)
-		normalized_offset = self._normalize_offset(offset)
+		limit = self._pagination.limit(limit)
+		scope = f"posts:feed:created-desc:{normalized_viewer_id}"
+		anchor = self._pagination.decode(after, scope)
 		community_ids = await self._get_accessible_community_ids(normalized_viewer_id)
-		posts = await self._repo.get_feed(community_ids, normalized_limit, normalized_offset)
-		return {"posts": [self._post_to_payload(post) for post in posts]}
+		posts = await self._repo.get_feed(community_ids, limit + 1, anchor)
+		items, page_info = self._pagination.page(posts, limit, scope)
+		return {"posts": items, "page_info": page_info}
 
 	async def list_user_posts(
 		self,
 		author_id: UUID | str,
 		viewer_id: UUID | str | None,
+		*,
+		limit: int = 50,
+		after: str | None = None,
 	) -> dict[str, Any]:
 		normalized_author_id = self._parse_uuid(author_id, label="author id")
 		normalized_viewer_id = self._parse_optional_uuid(viewer_id, label="viewer id")
+		limit = self._pagination.limit(limit)
+		scope = f"posts:author:{normalized_author_id}:created-desc:{normalized_viewer_id}"
+		anchor = self._pagination.decode(after, scope)
 
 		community_ids = await self._get_accessible_community_ids(normalized_viewer_id)
-		posts = await self._repo.get_user_posts(normalized_author_id, community_ids)
+		posts = await self._repo.get_user_posts(normalized_author_id, community_ids, limit + 1, anchor)
+		items, page_info = self._pagination.page(posts, limit, scope)
 		return {
 			"author_id": normalized_author_id,
-			"posts": [self._post_to_payload(post) for post in posts],
+			"posts": items,
+			"page_info": page_info,
 		}
 
 	async def list_community_posts(
@@ -104,19 +122,22 @@ class ContentService:
 		community_id: UUID | str,
 		viewer_id: UUID | str | None,
 		*,
-		limit: int,
-		offset: int,
+		limit: int = 50,
+		after: str | None = None,
 	) -> dict[str, Any]:
 		normalized_community_id = self._parse_uuid(community_id, label="community id")
 		normalized_viewer_id = self._parse_optional_uuid(viewer_id, label="viewer id")
-		normalized_limit = self._normalize_limit(limit)
-		normalized_offset = self._normalize_offset(offset)
+		limit = self._pagination.limit(limit)
+		scope = f"posts:community:{normalized_community_id}:created-desc:{normalized_viewer_id}"
+		anchor = self._pagination.decode(after, scope)
 
 		await self._require_community_access(normalized_community_id, normalized_viewer_id)
-		posts = await self._repo.get_community_posts(normalized_community_id, normalized_limit, normalized_offset)
+		posts = await self._repo.get_community_posts(normalized_community_id, limit + 1, anchor)
+		items, page_info = self._pagination.page(posts, limit, scope)
 		return {
 			"community_id": normalized_community_id,
-			"posts": [self._post_to_payload(post) for post in posts],
+			"posts": items,
+			"page_info": page_info,
 		}
 
 	async def delete_post(
@@ -198,16 +219,6 @@ class ContentService:
 		if len(normalized_value) > max_length:
 			raise ValidationError(f"{label.capitalize()} must be at most {max_length} characters")
 		return normalized_value
-
-	def _normalize_limit(self, value: int) -> int:
-		if value < 1 or value > 100:
-			raise ValidationError("Limit must be between 1 and 100")
-		return value
-
-	def _normalize_offset(self, value: int) -> int:
-		if value < 0:
-			raise ValidationError("Offset must be greater than or equal to 0")
-		return value
 
 
 __all__ = ["CONTENT_POSTS_DELETE_PERMISSION", "ContentService"]

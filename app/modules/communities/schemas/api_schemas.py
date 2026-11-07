@@ -7,6 +7,17 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class CursorPageRequest(BaseModel):
+	model_config = ConfigDict(extra="forbid")
+	limit: Annotated[int, Field(ge=1, le=100)] = 50
+	after: Annotated[str | None, Field(min_length=1, max_length=2048)] = None
+
+
+class CursorPageInfo(BaseModel):
+	next_cursor: str | None
+	has_more: bool
+
+
 class CreateCommunityRequest(BaseModel):
 	model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -32,6 +43,7 @@ class CommunityResponse(BaseModel):
 
 class CommunityListResponse(BaseModel):
 	communities: list[CommunityResponse]
+	page_info: CursorPageInfo
 
 
 class CommunityMemberResponse(BaseModel):
@@ -47,6 +59,7 @@ class CommunityMemberResponse(BaseModel):
 class CommunityMembersResponse(BaseModel):
 	community_id: UUID
 	members: list[CommunityMemberResponse]
+	page_info: CursorPageInfo
 
 
 class CommunityRoleResponse(BaseModel):
@@ -73,6 +86,8 @@ class CommunityPermissionsResponse(BaseModel):
 
 
 __all__ = [
+	"CursorPageRequest",
+	"CursorPageInfo",
 	"AssignCommunityRoleRequest",
 	"CommunityListResponse",
 	"CommunityMemberResponse",

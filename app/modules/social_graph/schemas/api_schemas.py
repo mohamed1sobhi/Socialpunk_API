@@ -1,10 +1,21 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class CursorPageRequest(BaseModel):
+	model_config = ConfigDict(extra="forbid")
+	limit: Annotated[int, Field(ge=1, le=100)] = 50
+	after: Annotated[str | None, Field(min_length=1, max_length=2048)] = None
+
+
+class CursorPageInfo(BaseModel):
+	next_cursor: str | None
+	has_more: bool
 
 
 class SendFriendRequestRequest(BaseModel):
@@ -33,14 +44,18 @@ class FriendshipResponse(BaseModel):
 class FriendListResponse(BaseModel):
 	user_id: UUID
 	friend_ids: list[UUID]
+	page_info: CursorPageInfo
 
 
 class PendingFriendRequestsResponse(BaseModel):
 	user_id: UUID
 	requests: list[FriendRequestResponse]
+	page_info: CursorPageInfo
 
 
 __all__ = [
+	"CursorPageRequest",
+	"CursorPageInfo",
 	"FriendListResponse",
 	"FriendRequestResponse",
 	"FriendshipResponse",

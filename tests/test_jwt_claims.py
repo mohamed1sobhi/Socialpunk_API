@@ -14,7 +14,7 @@ from starlette.requests import Request
 from app.main import app
 from app.modules.admins.services.service import AdminService
 from app.modules.content.api.user_routes import _get_optional_current_user
-from app.modules.notifications.api.router import notifications_websocket
+from app.modules.notifications.api.user_routes import notifications_websocket
 from app.modules.users.services.service import UserService
 from app.shared.auth.dependencies import bearer_scheme, get_current_user, require_permission
 from app.shared.auth.jwt import Audience, JWTClaims, SystemJWTClaims, create_access_token, create_refresh_token, decode_token

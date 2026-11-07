@@ -31,7 +31,7 @@ class AdminRepositoryProtocol(Protocol):
 	async def deactivate_user(self, user_id: UUID) -> dict[str, Any] | None: ...
 	async def get_role_by_id(self, role_id: UUID) -> dict[str, Any] | None: ...
 	async def get_role_by_name(self, name: str) -> dict[str, Any] | None: ...
-	async def list_roles(self) -> list[dict[str, Any]]: ...
+	async def list_roles(self, limit: int, offset: int) -> list[dict[str, Any]]: ...
 	async def create_role(self, data: dict[str, Any]) -> dict[str, Any]: ...
 	async def update_role(self, role_id: UUID, data: dict[str, Any]) -> dict[str, Any] | None: ...
 	async def get_user_role(self, user_id: UUID, role_id: UUID) -> dict[str, Any] | None: ...
@@ -201,9 +201,18 @@ class AdminService:
 			"permissions": permissions,
 		}
 
-	async def list_roles(self) -> dict[str, Any]:
-		roles = await self._repo.list_roles()
-		return {"roles": [self._role_to_payload(role) for role in roles]}
+	async def list_roles(self, *, limit: int = 50, offset: int = 0) -> dict[str, Any]:
+		if type(limit) is not int or not 1 <= limit <= 100:
+			raise ValidationError("Limit must be between 1 and 100")
+		if type(offset) is not int or offset < 0:
+			raise ValidationError("Offset must be greater than or equal to 0")
+		roles = await self._repo.list_roles(limit + 1, offset)
+		has_more = len(roles) > limit
+		return {
+			"roles": [self._role_to_payload(role) for role in roles[:limit]],
+			"page_info": {"limit": limit, "offset": offset, "has_more": has_more,
+				"next_offset": offset + limit if has_more else None},
+		}
 
 	async def create_role(
 		self,

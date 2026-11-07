@@ -100,8 +100,22 @@ class RoleResponse(BaseModel):
 	can_delete_posts: bool
 
 
+class OffsetPageRequest(BaseModel):
+	model_config = ConfigDict(extra="forbid")
+	limit: Annotated[int, Field(ge=1, le=100)] = 50
+	offset: Annotated[int, Field(ge=0)] = 0
+
+
+class OffsetPageInfo(BaseModel):
+	limit: int
+	offset: int
+	next_offset: int | None
+	has_more: bool
+
+
 class RoleListResponse(BaseModel):
 	roles: list[RoleResponse]
+	page_info: OffsetPageInfo
 
 
 class RoleAssignmentResponse(BaseModel):
@@ -117,6 +131,8 @@ class SystemUserPermissionsResponse(BaseModel):
 
 
 __all__ = [
+	"OffsetPageRequest",
+	"OffsetPageInfo",
 	"RefreshTokenRequest",
 	"RoleAssignmentRequest",
 	"RoleAssignmentResponse",
